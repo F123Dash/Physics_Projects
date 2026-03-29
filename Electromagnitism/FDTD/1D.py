@@ -59,6 +59,7 @@ ani = animation.FuncAnimation(
 )
 
 if SAVE_GIF:
+    os.makedirs(os.path.dirname(SAVE_GIF), exist_ok=True)
     ani.save(SAVE_GIF, writer="pillow", fps=8)
     print(f"Animation saved -> {SAVE_GIF}")
 
@@ -91,6 +92,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 fig_s.legend(handles, labels, loc="upper right", fontsize=10)
 fig_s.suptitle("1D FDTD snapshots - Ex & Hy fields", fontsize=13)
 fig_s.tight_layout()
+os.makedirs(os.path.dirname(SAVE_PNG), exist_ok=True)
 fig_s.savefig(SAVE_PNG, dpi=150)
 print(f"Static figure saved -> {SAVE_PNG}")
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <numeric>
 #include <string>
+#include <filesystem>
 
 constexpr double C0   = 2.99792458e8;    // Speed of light        [m/s]
 constexpr double MU0  = 1.25663706e-6;   // Permeability          [H/m]
@@ -131,6 +132,10 @@ int main()
     probe2_ts.reserve(NSTEP);
     std::vector<double> swr_profile(NX, 0.0);
     constexpr int SWR_WINDOW = 200;            // accumulate over last N steps
+
+    // Create output directory if it doesn't exist
+    std::filesystem::create_directories("./data_outputs");
+
     std::ofstream out_snap(OUTPUT_CSV);
     if(!out_snap){ std::cerr << "Cannot open " << OUTPUT_CSV << "\n"; return 1; }
     out_snap << "step,x,y,ez\n";

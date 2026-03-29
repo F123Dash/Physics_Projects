@@ -10,6 +10,7 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
+#include <filesystem>
 
 // ── Physical constants ────────────────────────────────────────────────────────
 constexpr double C0    = 2.99792458e8;   // Speed of light [m/s]
@@ -66,6 +67,7 @@ int main()
     }
 
     // ── Open output CSV ───────────────────────────────────────────────────
+    std::filesystem::create_directories("./data_outputs");
     std::ofstream csv(OUTPUT_CSV);
     if (!csv) { std::cerr << "Cannot open " << OUTPUT_CSV << "\n"; return 1; }
     csv << "step,z_m,Ex_V_per_m,Hy_A_per_m\n";

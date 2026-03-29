@@ -87,6 +87,7 @@ ani = animation.FuncAnimation(
 
 if SAVE_GIF:
     print(f"Saving animation → {SAVE_GIF}  (may take a moment) …")
+    os.makedirs(os.path.dirname(SAVE_GIF), exist_ok=True)
     ani.save(SAVE_GIF, writer="pillow", fps=12)
     print(f"  Saved {SAVE_GIF}")
 
@@ -114,6 +115,7 @@ for ax2 in axes[N_PANELS:]:
 
 fig_s.suptitle("2D FDTD snapshots – Ez field (TM mode)", fontsize=14, y=1.01)
 fig_s.tight_layout()
+os.makedirs(os.path.dirname(SAVE_PNG), exist_ok=True)
 fig_s.savefig(SAVE_PNG, dpi=150, bbox_inches="tight")
 print(f"Snapshots saved → {SAVE_PNG}")
 
