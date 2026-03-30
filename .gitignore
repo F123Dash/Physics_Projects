@@ -1,3 +1,15 @@
 .venv
 /.vscode
 __pycache__
+
+# Ignore common executable outputs anywhere in the repo
+**/*.exe
+**/*.out
+**/*.bin
+**/*.app
+
+# Ignore extensionless binaries from C/C++ builds (e.g. 1D, 2D, 3D)
+**/results_outputs/*
+**/1D
+**/2D
+**/3D
