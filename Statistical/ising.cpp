@@ -50,7 +50,7 @@ SimulationConfig parse_args(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: ./ising2d [options]\n"
-                << "  --sizes=16,32,64,128\n"
+                << "  --sizes=32,48,64,96,128,160,192,256\n"
                 << "  --tmin=1.8 --tmax=3.4 --dt=0.02\n"
                 << "  --therm=10000 --meas=50000 --stride=10\n"
                 << "  --seed=123456789 --out=data.csv\n";

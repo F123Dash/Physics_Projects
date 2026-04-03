@@ -6,7 +6,7 @@
 #include <vector>
 
 struct SimulationConfig {
-    std::vector<int> sizes{16, 24, 32, 48, 64, 96, 128};
+    std::vector<int> sizes{32, 48, 64, 96, 128, 160, 192, 256};
     double t_min = 1.8;
     double t_max = 3.4;
     double t_step = 0.02;
@@ -15,7 +15,7 @@ struct SimulationConfig {
     int sample_stride = 50;
     bool adaptive_grid = true;
     std::uint64_t seed = 123456789ULL;
-    std::string output_csv = "data.csv";
+    std::string output_csv = "./data_outputs/data.csv";
 };
 
 struct SampleAccumulator {
