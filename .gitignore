@@ -13,3 +13,25 @@ __pycache__
 **/1D
 **/2D
 **/3D
+
+# Ignore generated data files and folders
+**/data/
+**/data_*/
+**/data_outputs/
+**/*.csv
+**/*.tsv
+**/*.dat
+**/*.npy
+**/*.npz
+**/*.h5
+**/*.hdf5
+
+# Ignore generated plot files and folders
+**/plot/
+**/plots/
+**/plot_outputs/
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.svg
+**/*.pdf

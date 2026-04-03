@@ -81,7 +81,7 @@ Config parse_args(int argc, char** argv) {
             printf("  --meas=200000          Measurement sweeps\n");
             printf("  --stride=50            Sample every N sweeps\n");
             printf("  --seed=123456789       Random seed\n");
-            printf("  --out=data.csv         Output file\n");
+            printf("  --out=./data_outputs/data.csv   Output file\n");
             printf("  --no-adaptive          Use uniform temperature grid\n");
             exit(0);
         } else {

@@ -43,10 +43,7 @@ def savefig(path: str, include_pdf: bool = True) -> None:
 def plot_m_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
     """Plot magnetization vs temperature (clean lines, no markers)."""
     plt.figure(figsize=(6.5, 4.5))
-    valid_Ls = [16, 24, 32, 48, 64, 128]  # ✅ FIX 1: Remove L=96 for consistency
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
-        if L not in valid_Ls:
-            continue
         g = g.sort_values("T")
         plt.plot(g["T"], g["absM"], lw=2.0, 
                 label=rf"$L={int(L)}$", alpha=0.85)
@@ -64,10 +61,7 @@ def plot_m_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
 def plot_chi_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
     """Plot susceptibility with smoothing to reduce noise."""
     plt.figure(figsize=(6.5, 4.5))
-    valid_Ls = [16, 24, 32, 48, 64, 128]  # ✅ FIX 1: Remove L=96 for consistency
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
-        if L not in valid_Ls:
-            continue
         g = g.sort_values("T")
         t_vals = g["T"].to_numpy()
         chi_vals = g["chi"].to_numpy()
@@ -100,10 +94,7 @@ def plot_binder_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
         return
     
     plt.figure(figsize=(6.5, 4.5))
-    valid_Ls = [16, 24, 32, 48, 64, 128]  # ✅ FIX 1: Remove L=96 for consistency
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
-        if L not in valid_Ls:
-            continue
         g = g.sort_values("T")
         plt.plot(g["T"], g["U"], lw=2.0, 
                 label=rf"$L={int(L)}$", alpha=0.85)
@@ -121,10 +112,7 @@ def plot_binder_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
 def plot_c_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
     """Plot specific heat vs temperature."""
     plt.figure(figsize=(6.5, 4.5))
-    valid_Ls = [16, 24, 32, 48, 64, 128]  # ✅ FIX 1: Remove L=96 for consistency
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
-        if L not in valid_Ls:
-            continue
         g = g.sort_values("T")
         plt.plot(g["T"], g["C"], lw=2.0, 
                 label=rf"$L={int(L)}$", alpha=0.85)
@@ -242,10 +230,7 @@ def plot_data_collapse(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float
     nu = 1.0  # theoretical ν for 2D Ising
     
     plt.figure(figsize=(6.5, 5.0))
-    valid_Ls = [16, 24, 32, 48, 64, 128]  # ✅ FIX 1: Remove L=96 for consistency
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
-        if L not in valid_Ls:
-            continue
         Lf = float(L)
         g_sorted = g.sort_values("T")
         
@@ -297,22 +282,21 @@ def plot_beta_bootstrap_hist(beta_csv: str, metrics_df: pd.DataFrame, outdir: st
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot Ising finite-size scaling diagnostics.")
-    parser.add_argument("--data", default="data.csv")
-    parser.add_argument("--metrics", default="analysis_metrics.csv")
-    parser.add_argument("--beta_csv", default="beta_bootstrap.csv")
-    parser.add_argument("--outdir", default="plots")
+    parser.add_argument("--data", default="./data_outputs/data.csv")
+    parser.add_argument("--metrics", default="./data_outputs/analysis_metrics.csv")
+    parser.add_argument("--beta_csv", default="./data_outputs/beta_bootstrap.csv")
+    parser.add_argument("--outdir", default="./plots")
     args = parser.parse_args()
 
     ensure_plot_dir(args.outdir)
 
     df = load_ising_csv(args.data)
+    print(f"Using dynamic lattice sizes from data: {sorted(df['L'].unique().tolist())}")
     
     # Load metrics if available
     metrics_df = None
     if os.path.exists(args.metrics):
         metrics_df = pd.read_csv(args.metrics)
-    
-    # ✅ CORRECTED: Use χ-based Tc (numerically robust)
     tc_by_L, tc_inf, tc_inf_stderr, _ = estimate_tc_finite_size(df)
 
     plot_m_vs_t(df, tc_inf, args.outdir)

@@ -1,4 +1,5 @@
 import argparse
+import os
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -29,13 +30,7 @@ def block_average(data: np.ndarray, block_size: int) -> np.ndarray:
 
 
 def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) -> float:
-    """Find crossing point via sign-change detection.
-    
-    Strategy: 
-    1. Find all sign changes in U1-U2
-    2. Prefer crossings in physical range [2.0, 2.5]
-    3. Among those, pick the one closest to zero (most robust crossing)
-    """
+    """Find crossing point via sign-change detection."""
     diff = u1 - u2  # Don't take absolute value!
     
     # Remove any NaN values that may arise from extrapolation
@@ -62,7 +57,7 @@ def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) ->
     ])
     
     if np.any(physical_range_mask):
-        # Use crossings in physical range, pick one with smallest |diff|
+        # Use crossings in physical range, pick one with smallest absoute diff
         candidates = sign_changes[physical_range_mask]
     else:
         # No crossings in range, use all
@@ -90,16 +85,7 @@ def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) ->
 
 
 def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
-    """Estimate Tc via finite-size EXTRAPOLATION of Binder crossings.
-    
-    Fundamental model: Tc(L) = Tc(∞) + a*L^(-1/ν)
-    
-    For 2D Ising: ν = 1, so Tc(L) = Tc(∞) + a*L^(-1)
-    
-    Do NOT average - extrapolate via linear regression on 1/L vs Tc(L).
-    
-    Returns: (tc_inf, tc_stderr, tc_list) for proper finite-size analysis.
-    """
+    """Estimate Tc via finite-size EXTRAPOLATION of Binder crossings."""
     sizes = sorted(df["L"].unique())
     
     if len(sizes) < 2:
@@ -163,9 +149,6 @@ def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
     if len(tc_list) == 0:
         raise RuntimeError("No valid Binder crossings found")
     
-    # ✅ FIX 1: EXTRAPOLATE instead of average
-    # Tc(L) = Tc(∞) + a*L^(-1) for 2D Ising (ν = 1)
-    # Use 1/L_eff where L_eff = sqrt(L1 * L2)
     L_eff = np.array([np.sqrt(L1 * L2) for L1, L2 in pairs])
     tc_vals = np.array(tc_list)
     
@@ -184,16 +167,7 @@ def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
 
 
 def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, float, float]:
-    """Estimate Tc(L) from χ peak (primary, numerically robust).
-    
-    ✅ CORRECTED: 
-    - Smooths χ curves before peak detection to reduce noise
-    - Uses ONLY largest systems (L ≥ 96) to avoid finite-size contamination
-    - Uses weighted regression (L²) to emphasize large-L data
-    - Clamps result to physical window [2.1, 2.4]
-    
-    Returns: (tc_by_L, tc_inf, tc_inf_stderr, tc_inf)
-    """
+    """Estimate Tc(L) from χ peak (primary, numerically robust)."""
     from scipy.signal import savgol_filter
     
     # PRIMARY: χ-peak based Tc (robust) with smoothing
@@ -201,8 +175,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
     for L, g in df.groupby("L"):
         g = g.sort_values("T").copy()
         
-        # Smooth χ to reduce noise before finding peak
-        # ✅ FIX B.7: Adaptive window to reduce bias
         chi_vals = g["chi"].to_numpy()
         n_points = len(chi_vals)
         # Make window_length odd and respect array size
@@ -212,9 +184,8 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         i = int(np.argmax(chi_smooth))
         tc_by_L[int(L)] = float(g.iloc[i]["T"])
     
-    print(f"DEBUG Tc(L):", tc_by_L)  # ✅ FIX 7: Debug print MANDATORY
+    print(f"DEBUG Tc(L):", tc_by_L)
     
-    # ✅ FIX 1: REMOVE corrupted L values automatically
     Ls_all = sorted(tc_by_L.keys())
     median_tc = np.median(list(tc_by_L.values()))
     
@@ -226,7 +197,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         if abs(tc_by_L[L] - median_tc) < 0.2:
             valid_Ls.append(L)
     
-    # ✅ FIX 2: ENFORCE MONOTONIC Tc(L)
     tc_pairs = sorted([(L, tc_by_L[L]) for L in valid_Ls])
     filtered = []
     prev = 10.0  # Start high
@@ -243,13 +213,11 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         Ls_large = np.array([L for L, _ in filtered], dtype=float)
         tcL = np.array([tc for _, tc in filtered], dtype=float)
     
-    # ✅ FIX 2: FORCE 3 POINTS IN Tc FIT
     # Always include L=[48, 64, 128] if available for robust extrapolation
     if len(Ls_large) < 3 and 48 in tc_by_L and 64 in tc_by_L and 128 in tc_by_L:
         Ls_large = np.array([48, 64, 128], dtype=float)
         tcL = np.array([tc_by_L[48], tc_by_L[64], tc_by_L[128]], dtype=float)
     
-    # ✅ FIX 4: HARD PHYSICS FILTER
     mask = (tcL > 2.1) & (tcL < 2.4)
     if np.count_nonzero(mask) > 0:
         Ls_large = Ls_large[mask]
@@ -257,7 +225,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
     
     x = 1.0 / Ls_large
 
-    # ✅ FIX 3: REVERT to linear fit (quadratic unstable with 3 points)
     weights = Ls_large**2  # larger systems dominate
     
     if len(Ls_large) >= 2:
@@ -271,7 +238,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         r_sq = 1.0 - (ss_res / ss_tot if ss_tot > 0 else 0)
         
         tc_inf = float(intercept)
-        # ✅ FIX 1: Proper uncertainty calculation (was giving 0.0 for 2 points)
         if len(tcL) > 2:
             stderr = np.sqrt(np.sum((tcL - y_pred)**2) / (len(tcL) - 2))
         else:
@@ -286,7 +252,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
     
     tc_inf_stderr = float(stderr)
     
-    # ✅ FIX 3: Clamp to physical window to catch pathological extrapolations
     if not (2.1 < tc_inf < 2.4):
         print(f"⚠ Tc({tc_inf:.4f}) outside physical range [2.1, 2.4]; using mean of largest systems")
         tc_inf = float(np.mean(tcL))
@@ -303,14 +268,7 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
 
 
 def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 0.1, nu: float = 1.0) -> Tuple[float, float]:
-    """Estimate beta from largest system below Tc using strict fitting window.
-    
-    Approach: Use largest L below Tc where |M| is well-defined and non-zero
-    ✅ FIX 3: Window [Tc - 0.08, Tc - 0.02] K (stricter, avoids finite-size rounding)
-    Fit: log |M| = β log(Tc - T)
-    
-    Returns: (beta, stderr)
-    """
+    """Estimate beta from largest system below Tc using strict fitting window."""
     # Get largest L system
     large_l_df = df[df["L"] >= 64]
     if len(large_l_df) > 0:
@@ -323,7 +281,6 @@ def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 
     if len(df_max_l) < 10:
         raise RuntimeError(f"Insufficient L={lmax} data")
     
-    # ✅ FIX 3: Strict window far from Tc singularity [Tc - 0.08, Tc - 0.02]
     T_min, T_max = tc_est - 0.08, tc_est - 0.02
     mask = (df_max_l["T"] >= T_min) & (df_max_l["T"] <= T_max)
     df_fit = df_max_l[mask].copy()
@@ -349,7 +306,6 @@ def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 
     if np.any(tau <= 0):
         raise RuntimeError("Temperature points not below Tc")
     
-    # ✅ FIX 6: Ensure monotonic ordering (critical stability fix)
     order = np.argsort(tau)
     tau = tau[order]
     M_vals = M_vals[order]
@@ -370,7 +326,6 @@ def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 
     r2 = 1.0 - ss_res / (ss_tot + 1e-10)
     
     window_str = f"[{T_min:.3f}, {T_max:.3f}] K"
-    # ✅ FIX 6: Add diagnostics
     print(f"  Using window: ΔT ∈ [{tau.min():.4f}, {tau.max():.4f}] K")
     print(f"  L={lmax} (largest system): β = {beta_fit:.4f} (R² = {r2:.4f}, T ∈ {window_str}, {len(x)} pts)")
     
@@ -391,12 +346,7 @@ def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 
 
 
 def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]:
-    """Fit beta from LARGEST-L ONLY below Tc via log M = beta log(Tc-T) + c.
-    
-    ✅ FIX C.8: Uses strict window 0.02 < Tc-T < 0.06 (critical region, avoid finite-size rounding)
-    ✅ FIX C.9: ALWAYS removes last 2 points (deterministic, avoids pathological extrapolation)
-    Uses largest available L (preferably >= 64, but accepts smaller if needed).
-    """
+    """Fit beta from LARGEST-L ONLY below Tc via log M = beta log(Tc-T) + c."""
     # CRITICAL: Only use largest L
     min_l_for_beta = 64
     
@@ -417,7 +367,6 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
     dt = tc_est - g["T"].to_numpy()
     m = g["absM"].to_numpy()
 
-    # ✅ FIX 5: IMPROVE β ACCURACY with window [0.02, 0.07]
     mask = (dt > 0.02) & (dt < 0.07) & (m > 1e-8)
     
     if np.count_nonzero(mask) < 3:
@@ -430,8 +379,6 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
     if len(x) < 3:
         raise RuntimeError(f"Insufficient points in fit region (need ≥3, got {len(x)})")
     
-    # ✅ FIX C.9: ALWAYS remove closest-to-Tc points (LAST 2, deterministic)
-    # These are always contaminated by finite-size rounding
     if len(x) >= 4:
         x = x[:-2]
         y = y[:-2]
@@ -445,12 +392,6 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
     slope, intercept, r_sq, _, stderr = stats.linregress(x, y)
     _ = intercept
     
-    # ✅ FIX 6: REMOVE AUTO REJECTION (temporary workaround)
-    # Comment out hard rejection - accept imperfect β when Tc is noisy
-    # if not (0.07 < slope < 0.18):
-    #     print(f"  ⚠ REJECTED: Beta={slope:.4f} outside scaling regime [0.07, 0.18]")
-    #     raise RuntimeError(f"Beta {slope:.4f} indicates non-scaling region")
-    
     if slope < 0.07 or slope > 0.18:
         print(f"  ⚠ WARNING: Beta={slope:.4f} outside typical range [0.07, 0.18] (likely due to Tc uncertainty)")
     
@@ -460,11 +401,7 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
 
 
 def bootstrap_beta(df: pd.DataFrame, tc_est: float, n_boot: int = 1000, seed: int = 1234) -> np.ndarray:
-    """Bootstrap estimate of beta uncertainty (FIX D.12: Uses SAME window as estimate_beta_loglog).
-    
-    Consistency: Must use identical window and trimming as beta fitting.
-    ✅ FIX D.12: Window [Tc-0.06, Tc-0.02], trim last 2 points
-    """
+    """Bootstrap estimate of beta uncertainty (FIX D.12: Uses SAME window as estimate_beta_loglog)."""
     # Get largest system (same as beta fit)
     large_l_df = df[df["L"] >= 64]
     if len(large_l_df) > 0:
@@ -477,7 +414,6 @@ def bootstrap_beta(df: pd.DataFrame, tc_est: float, n_boot: int = 1000, seed: in
     if len(g) < 6:
         return np.array([], dtype=float)
     
-    # ✅ FIX D.12: EXACT same window as estimate_beta_loglog: [Tc-0.06, Tc-0.02]
     T_vals = g["T"].to_numpy()
     M_vals = g["absM"].to_numpy()
     
@@ -497,7 +433,6 @@ def bootstrap_beta(df: pd.DataFrame, tc_est: float, n_boot: int = 1000, seed: in
     x = np.log(dt_fit)
     y = np.log(M_fit)
     
-    # ✅ FIX D.12: ALWAYS trim last 2 points (same as beta fit)
     if len(x) >= 4:
         x = x[:-2]
         y = y[:-2]
@@ -529,11 +464,22 @@ def bootstrap_beta(df: pd.DataFrame, tc_est: float, n_boot: int = 1000, seed: in
     return np.array(betas[:n_boot], dtype=float)
 
 
-def run_analysis(data_csv: str, metrics_csv: str = "analysis_metrics.csv", bootstrap_csv: str = "beta_bootstrap.csv") -> CriticalEstimates:
+def run_analysis(
+    data_csv: str,
+    metrics_csv: str = "./data_outputs/analysis_metrics.csv",
+    bootstrap_csv: str = "./data_outputs/beta_bootstrap.csv",
+) -> CriticalEstimates:
     df = load_ising_csv(data_csv)
+    available_sizes = sorted(df["L"].unique().tolist())
+    print(f"Using dynamic lattice sizes from data: {available_sizes}")
+
+    metrics_dir = os.path.dirname(metrics_csv) or "."
+    bootstrap_dir = os.path.dirname(bootstrap_csv) or "."
+    os.makedirs(metrics_dir, exist_ok=True)
+    os.makedirs(bootstrap_dir, exist_ok=True)
+
     tc_by_L, tc_inf, tc_inf_stderr, tc_inf_val = estimate_tc_finite_size(df)
     
-    # ✅ FIX 4: Use log-log method (collapse is visual validation only)
     print("Beta estimation: Using log-log scaling (largest L)...")
     try:
         beta, beta_stderr = estimate_beta_loglog(df, tc_inf_val)
@@ -556,9 +502,10 @@ def run_analysis(data_csv: str, metrics_csv: str = "analysis_metrics.csv", boots
     )
     metrics.to_csv(metrics_csv, index=False)
 
+    tc_by_l_csv = os.path.join(metrics_dir, "tc_by_L.csv")
     pd.DataFrame(
         [{"L": L, "Tc_L": tc} for L, tc in sorted(tc_by_L.items())]
-    ).to_csv("tc_by_L.csv", index=False)
+    ).to_csv(tc_by_l_csv, index=False)
 
     if beta_boot.size > 0:
         pd.DataFrame({"beta": beta_boot}).to_csv(bootstrap_csv, index=False)
@@ -574,12 +521,16 @@ def run_analysis(data_csv: str, metrics_csv: str = "analysis_metrics.csv", boots
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Finite-size scaling analysis for 2D Ising model.")
-    parser.add_argument("--data", default="data.csv", help="Input CSV from C++ simulation")
-    parser.add_argument("--metrics", default="analysis_metrics.csv", help="Output metrics CSV")
-    parser.add_argument("--bootstrap", default="beta_bootstrap.csv", help="Output bootstrap beta CSV")
+    parser.add_argument("--data", default="./data_outputs/data.csv", help="Input CSV from C++/CUDA simulation")
+    parser.add_argument("--metrics", default="./data_outputs/analysis_metrics.csv", help="Output metrics CSV")
+    parser.add_argument("--bootstrap", default="./data_outputs/beta_bootstrap.csv", help="Output bootstrap beta CSV")
     args = parser.parse_args()
 
-    est = run_analysis(args.data, args.metrics, args.bootstrap)
+    est = run_analysis(
+        args.data,
+        args.metrics,
+        args.bootstrap,
+    )
 
     print("\n" + "="*50)
     print("Analysis complete")
