@@ -14,6 +14,7 @@ struct SimulationConfig {
     int measurement_sweeps = 200000;
     int sample_stride = 50;
     bool adaptive_grid = true;
+    bool append_mode = false;
     std::uint64_t seed = 123456789ULL;
     std::string output_csv = "./data_outputs/data.csv";
 };
@@ -78,3 +79,6 @@ private:
 
 SimulationConfig parse_args(int argc, char** argv);
 std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step);
+
+// Helper function to read existing lattice sizes from CSV file
+std::vector<int> get_existing_sizes(const std::string& filename);

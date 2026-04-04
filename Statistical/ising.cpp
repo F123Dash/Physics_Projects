@@ -1,7 +1,9 @@
 #include "ising.hpp"
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -21,6 +23,43 @@ static std::vector<int> parse_sizes_csv(const std::string& csv) {
         throw std::runtime_error("--sizes requires at least one integer.");
     }
     return out;
+}
+
+std::vector<int> get_existing_sizes(const std::string& filename) {
+    std::set<int> sizes_set;
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        // File does not exist or cannot be read, return empty
+        return std::vector<int>();
+    }
+    
+    std::string line;
+    // Skip header
+    if (!std::getline(file, line)) {
+        return std::vector<int>();
+    }
+    
+    // Read data lines and extract L values (column index 1)
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string cell;
+        int col = 0;
+        while (std::getline(ss, cell, ',')) {
+            if (col == 1) {
+                try {
+                    sizes_set.insert(std::stoi(cell));
+                } catch (...) {
+                    // Skip malformed lines
+                }
+                break;
+            }
+            col++;
+        }
+    }
+    file.close();
+    
+    return std::vector<int>(sizes_set.begin(), sizes_set.end());
 }
 
 SimulationConfig parse_args(int argc, char** argv) {
@@ -47,13 +86,16 @@ SimulationConfig parse_args(int argc, char** argv) {
             cfg.seed = static_cast<std::uint64_t>(std::stoull(arg.substr(7)));
         } else if (starts_with(arg, "--out=")) {
             cfg.output_csv = arg.substr(6);
+        } else if (arg == "--append") {
+            cfg.append_mode = true;
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: ./ising2d [options]\n"
                 << "  --sizes=32,48,64,96,128,160,192,256\n"
                 << "  --tmin=1.8 --tmax=3.4 --dt=0.02\n"
                 << "  --therm=10000 --meas=50000 --stride=10\n"
-                << "  --seed=123456789 --out=./data_outputs/data.csv\n";
+                << "  --seed=123456789 --out=./data_outputs/data.csv\n"
+                << "  --append        Append new sizes only (skip existing)\n";
             std::exit(0);
         } else {
             throw std::runtime_error("Unknown argument: " + arg);
@@ -65,6 +107,25 @@ SimulationConfig parse_args(int argc, char** argv) {
     }
     if (cfg.thermal_sweeps < 0 || cfg.measurement_sweeps <= 0 || cfg.sample_stride <= 0) {
         throw std::runtime_error("Sweep and stride values must be positive (thermal can be zero).\n");
+    }
+
+    // Filter out existing sizes if in append mode
+    if (cfg.append_mode) {
+        std::vector<int> existing = get_existing_sizes(cfg.output_csv);
+        std::vector<int> new_sizes;
+        for (int L : cfg.sizes) {
+            bool found = false;
+            for (int existing_L : existing) {
+                if (L == existing_L) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                new_sizes.push_back(L);
+            }
+        }
+        cfg.sizes = new_sizes;
     }
 
     return cfg;
