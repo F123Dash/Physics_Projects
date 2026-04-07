@@ -86,6 +86,9 @@ SimulationConfig parse_args(int argc, char** argv) {
             cfg.seed = static_cast<std::uint64_t>(std::stoull(arg.substr(7)));
         } else if (starts_with(arg, "--out=")) {
             cfg.output_csv = arg.substr(6);
+        } else if (starts_with(arg, "--append=")) {
+            cfg.sizes = parse_sizes_csv(arg.substr(9));
+            cfg.append_mode = true;
         } else if (arg == "--append") {
             cfg.append_mode = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -95,7 +98,8 @@ SimulationConfig parse_args(int argc, char** argv) {
                 << "  --tmin=1.8 --tmax=3.4 --dt=0.02\n"
                 << "  --therm=10000 --meas=50000 --stride=10\n"
                 << "  --seed=123456789 --out=./data_outputs/data.csv\n"
-                << "  --append        Append new sizes only (skip existing)\n";
+                << "  --append              Append with default sizes (skip existing)\n"
+                << "  --append=512,768      Append only specific sizes\n";
             std::exit(0);
         } else {
             throw std::runtime_error("Unknown argument: " + arg);

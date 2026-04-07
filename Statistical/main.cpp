@@ -11,17 +11,42 @@ int main(int argc, char** argv) {
         const std::vector<double> temps = make_temperature_grid(
             cfg.t_min, cfg.t_max, cfg.t_step, cfg.adaptive_grid);
 
+        // Check if file exists for header logic
+        std::ifstream infile(cfg.output_csv);
+        bool file_exists = infile.good();
+        infile.close();
+
         std::mt19937_64 rng(cfg.seed);
 
-        std::ofstream out(cfg.output_csv);
+        // Open in append mode if configured, otherwise truncate
+        std::ofstream out;
+        if (cfg.append_mode && file_exists) {
+            out.open(cfg.output_csv, std::ios_base::app);
+        } else {
+            out.open(cfg.output_csv);
+        }
+        
         if (!out) {
             throw std::runtime_error("Failed to open output file: " + cfg.output_csv);
         }
 
-        out << "T,L,M,absM,E,M2,E2,M4\n";
+        // Only write header if file is new or not appending
+        if (!cfg.append_mode || !file_exists) {
+            out << "T,L,M,absM,E,M2,E2,M4\n";
+        }
         out << std::fixed << std::setprecision(8);
 
         std::cout << "2D Ising Metropolis simulation\n";
+        if (cfg.append_mode && file_exists && cfg.sizes.empty()) {
+            std::cout << "  Append mode: All requested sizes already present in data file.\n";
+            std::cout << "  Nothing to simulate.\n";
+            out.close();
+            std::cout << "Exiting.\n";
+            return 0;
+        }
+        if (cfg.append_mode) {
+            std::cout << "  Append mode: Adding new sizes only\n";
+        }
         std::cout << "  sizes: ";
         for (size_t i = 0; i < cfg.sizes.size(); ++i) {
             std::cout << cfg.sizes[i] << (i + 1 == cfg.sizes.size() ? '\n' : ',');

@@ -10,11 +10,14 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <set>
 
 // Helper functions for argument parsing
 static bool starts_with(const char* s, const char* pref) {
     return strncmp(s, pref, strlen(pref)) == 0;
 }
+
+std::vector<int> get_existing_sizes(const std::string& filename);
 
 static std::vector<int> parse_sizes_csv(const char* csv) {
     std::vector<int> out;
@@ -32,6 +35,43 @@ static std::vector<int> parse_sizes_csv(const char* csv) {
     return out;
 }
 
+std::vector<int> get_existing_sizes(const std::string& filename) {
+    std::set<int> sizes_set;
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        // File does not exist or cannot be read, return empty
+        return std::vector<int>();
+    }
+    
+    std::string line;
+    // Skip header
+    if (!std::getline(file, line)) {
+        return std::vector<int>();
+    }
+    
+    // Read data lines and extract L values (column index 1)
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string cell;
+        int col = 0;
+        while (std::getline(ss, cell, ',')) {
+            if (col == 1) {
+                try {
+                    sizes_set.insert(std::stoi(cell));
+                } catch (...) {
+                    // Skip malformed lines
+                }
+                break;
+            }
+            col++;
+        }
+    }
+    file.close();
+    
+    return std::vector<int>(sizes_set.begin(), sizes_set.end());
+}
+
 struct Config {
     std::vector<int> sizes{32, 48, 64, 96, 128, 160, 192, 256};
     double t_min = 1.8;
@@ -41,6 +81,7 @@ struct Config {
     int measurement_sweeps = 200000;
     int sample_stride = 50;
     bool adaptive_grid = true;
+    bool append_mode = false;
     uint64_t seed = 123456789ULL;
     std::string output_csv = "./data_outputs/data.csv";
 };
@@ -71,6 +112,11 @@ Config parse_args(int argc, char** argv) {
             cfg.output_csv = arg + 6;
         } else if (starts_with(arg, "--no-adaptive")) {
             cfg.adaptive_grid = false;
+        } else if (starts_with(arg, "--append=")) {
+            cfg.sizes = parse_sizes_csv(arg + 9);
+            cfg.append_mode = true;
+        } else if (starts_with(arg, "--append")) {
+            cfg.append_mode = true;
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
             printf("Usage: ./ising2d_cuda [options]\n");
             printf("  --sizes=32,48,64,96,128,160,192,256   Lattice sizes to simulate\n");
@@ -83,6 +129,8 @@ Config parse_args(int argc, char** argv) {
             printf("  --seed=123456789       Random seed\n");
             printf("  --out=./data_outputs/data.csv   Output file\n");
             printf("  --no-adaptive          Use uniform temperature grid\n");
+            printf("  --append               Append with default sizes (skip existing)\n");
+            printf("  --append=512,768       Append only specific sizes\n");
             exit(0);
         } else {
             fprintf(stderr, "Unknown argument: %s\n", arg);
@@ -97,6 +145,25 @@ Config parse_args(int argc, char** argv) {
     if (cfg.thermal_sweeps < 0 || cfg.measurement_sweeps <= 0 || cfg.sample_stride <= 0) {
         fprintf(stderr, "Error: Sweep and stride values must be positive.\n");
         exit(1);
+    }
+
+    // Filter out existing sizes if in append mode
+    if (cfg.append_mode) {
+        std::vector<int> existing = get_existing_sizes(cfg.output_csv);
+        std::vector<int> new_sizes;
+        for (int L : cfg.sizes) {
+            bool found = false;
+            for (int existing_L : existing) {
+                if (L == existing_L) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                new_sizes.push_back(L);
+            }
+        }
+        cfg.sizes = new_sizes;
     }
 
     return cfg;
@@ -150,20 +217,44 @@ int main(int argc, char** argv) {
     std::vector<double> temps = make_temperature_grid(
         cfg.t_min, cfg.t_max, cfg.t_step, cfg.adaptive_grid);
 
+    // Check if file exists for header logic
+    std::ifstream infile(cfg.output_csv);
+    bool file_exists = infile.good();
+    infile.close();
+
     // Print GPU info
     print_gpu_info();
 
-    // Open output file
-    std::ofstream out(cfg.output_csv);
+    // Open output file in append or truncate mode
+    std::ofstream out;
+    if (cfg.append_mode && file_exists) {
+        out.open(cfg.output_csv, std::ios_base::app);
+    } else {
+        out.open(cfg.output_csv);
+    }
+    
     if (!out) {
         fprintf(stderr, "Error: Failed to open output file: %s\n", cfg.output_csv.c_str());
         return 1;
     }
 
-    out << "T,L,M,absM,E,M2,E2,M4\n";
+    // Only write header if file is new or not appending
+    if (!cfg.append_mode || !file_exists) {
+        out << "T,L,M,absM,E,M2,E2,M4\n";
+    }
     out << std::fixed << std::setprecision(8);
 
     printf("2D Ising Metropolis simulation (CUDA)\n");
+    if (cfg.append_mode && file_exists && cfg.sizes.empty()) {
+        printf("  Append mode: All requested sizes already present in data file.\n");
+        printf("  Nothing to simulate.\n");
+        out.close();
+        printf("Exiting.\n");
+        return 0;
+    }
+    if (cfg.append_mode) {
+        printf("  Append mode: Adding new sizes only\n");
+    }
     printf("  sizes: ");
     for (size_t i = 0; i < cfg.sizes.size(); ++i) {
         printf("%d%c", cfg.sizes[i], (i + 1 == cfg.sizes.size()) ? '\n' : ',');
