@@ -52,6 +52,7 @@ public:
     void initialize_ordered(int spin_value = 1);
     void set_temperature(double T);
     void sweep_metropolis();
+    void sweep_wolff();
 
     double magnetization_per_spin() const;
     double energy_per_spin() const;

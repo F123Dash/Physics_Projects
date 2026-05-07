@@ -249,12 +249,122 @@ __global__ void reduce_sum_kernel(int* data, int* result, int N) {
     }
 }
 
+// Wolff kernels
+__global__ void wolff_initialize_kernel(
+    int8_t* spins,
+    int* visited,
+    int* queue,
+    int* queue_size,
+    int* queue_capacity,
+    curandState* rng,
+    int N,
+    int* seed_idx
+) {
+    // Only one thread does this
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        // Reset visited array
+        for (int i = 0; i < N; ++i) {
+            visited[i] = 0;
+        }
+        
+        // Pick a random seed spin
+        curandState local_state = rng[0];
+        int idx = (int)(curand_uniform(&local_state) * N);
+        rng[0] = local_state;
+        
+        *seed_idx = idx;
+        visited[idx] = 1;
+        queue[0] = idx;
+        *queue_size = 1;
+        *queue_capacity = N;  // Max queue size is N
+    }
+    __syncthreads();
+}
+
+__global__ void wolff_expand_kernel(
+    int8_t* spins,
+    int* visited,
+    int* queue,
+    int* read_pos,
+    int* write_pos,
+    int* queue_capacity,
+    curandState* rng,
+    int L,
+    float wolff_prob,
+    int* cluster_continue
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Get current queue indices
+    int curr_read = *read_pos;
+    int curr_write = *write_pos;
+    int total_in_queue = curr_write - curr_read;
+    
+    if (tid >= total_in_queue || curr_read >= curr_write) {
+        return;
+    }
+    
+    // Each thread processes one item from the current queue
+    int queue_idx = curr_read + tid;
+    int site_idx = queue[queue_idx];
+    
+    int x = site_idx % L;
+    int y = site_idx / L;
+    int8_t seed_spin = spins[site_idx];
+    
+    // Check all 4 neighbors
+    int neighbors[4] = {
+        y * L + ((x + 1 < L) ? x + 1 : 0),  // right
+        y * L + ((x > 0) ? x - 1 : L - 1),  // left
+        ((y + 1 < L) ? y + 1 : 0) * L + x,  // down
+        ((y > 0) ? y - 1 : L - 1) * L + x   // up
+    };
+    
+    for (int i = 0; i < 4; ++i) {
+        int neighbor_idx = neighbors[i];
+        
+        // If neighbor has same spin and not visited
+        if (!visited[neighbor_idx] && spins[neighbor_idx] == seed_spin) {
+            // Try to mark as visited using atomicCAS
+            int old_val = atomicCAS(&visited[neighbor_idx], 0, 1);
+            
+            if (old_val == 0) {
+                // Successfully marked as visited
+                curandState local_state = rng[threadIdx.x + blockIdx.x * blockDim.x];
+                float r = curand_uniform(&local_state);
+                rng[threadIdx.x + blockIdx.x * blockDim.x] = local_state;
+                
+                if (r < wolff_prob) {
+                    int pos = atomicAdd(write_pos, 1);
+                    if (pos < *queue_capacity) {
+                        queue[pos] = neighbor_idx;
+                        *cluster_continue = 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+__global__ void wolff_flip_cluster_kernel(
+    int8_t* spins,
+    const int* visited,
+    int N
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N && visited[idx]) {
+        spins[idx] = -spins[idx];
+    }
+}
+
 // Ising2DCUDA class implementation
 
 Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     : L_(L), N_(L * L), d_spins_(nullptr), d_rng_states_(nullptr),
       exp_dE4_(1.0f), exp_dE8_(1.0f),
       d_partial_mag_(nullptr), d_partial_energy_(nullptr), d_result_(nullptr),
+      d_visited_(nullptr), d_queue_(nullptr), d_queue_size_(nullptr),
+      d_queue_capacity_(nullptr), d_seed_idx_(nullptr), d_rng_states_full_(nullptr),
       cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
 {
     // Allocate device memory for spins
@@ -276,6 +386,38 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     check_cuda_last_error("init_rng_kernel");
     cudaDeviceSynchronize();
 
+    // Allocate full RNG states for Wolff (one per site)
+    check_cuda_error(
+        cudaMalloc(&d_rng_states_full_, N_ * sizeof(curandState)),
+        "Allocating full RNG states for Wolff"
+    );
+    int num_blocks_full_rng = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    init_rng_kernel<<<num_blocks_full_rng, BLOCK_SIZE>>>(d_rng_states_full_, seed + 1, N_);
+    check_cuda_last_error("init_rng_kernel for full states");
+    cudaDeviceSynchronize();
+
+    // Allocate Wolff algorithm buffers
+    check_cuda_error(
+        cudaMalloc(&d_visited_, N_ * sizeof(int)),
+        "Allocating visited array"
+    );
+    check_cuda_error(
+        cudaMalloc(&d_queue_, N_ * sizeof(int)),
+        "Allocating queue"
+    );
+    check_cuda_error(
+        cudaMalloc(&d_queue_size_, sizeof(int)),
+        "Allocating queue size"
+    );
+    check_cuda_error(
+        cudaMalloc(&d_queue_capacity_, sizeof(int)),
+        "Allocating queue capacity"
+    );
+    check_cuda_error(
+        cudaMalloc(&d_seed_idx_, sizeof(int)),
+        "Allocating seed index"
+    );
+
     // Allocate reduction buffers
     num_blocks_ = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
     check_cuda_error(
@@ -295,9 +437,15 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
 Ising2DCUDA::~Ising2DCUDA() {
     if (d_spins_) cudaFree(d_spins_);
     if (d_rng_states_) cudaFree(d_rng_states_);
+    if (d_rng_states_full_) cudaFree(d_rng_states_full_);
     if (d_partial_mag_) cudaFree(d_partial_mag_);
     if (d_partial_energy_) cudaFree(d_partial_energy_);
     if (d_result_) cudaFree(d_result_);
+    if (d_visited_) cudaFree(d_visited_);
+    if (d_queue_) cudaFree(d_queue_);
+    if (d_queue_size_) cudaFree(d_queue_size_);
+    if (d_queue_capacity_) cudaFree(d_queue_capacity_);
+    if (d_seed_idx_) cudaFree(d_seed_idx_);
 }
 
 void Ising2DCUDA::initialize_random() {
@@ -353,6 +501,76 @@ void Ising2DCUDA::sweep_metropolis() {
 
     observables_valid_ = false;
 }
+
+void Ising2DCUDA::sweep_wolff(){
+    int num_blocks = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    
+    // Wolff probability: P = 1 - exp(-2*beta)
+    // If exp_dE4 = exp(-4*beta), then exp(-2*beta) = sqrt(exp_dE4)
+    // wolff_prob = 1 - sqrt(exp_dE4)
+    float wolff_prob = 1.0f - sqrtf(exp_dE4_);
+    
+    // Initialize cluster with a random seed spin
+    int num_blocks_init = 1;
+    wolff_initialize_kernel<<<num_blocks_init, BLOCK_SIZE>>>(
+        d_spins_, d_visited_, d_queue_, d_queue_size_, d_queue_capacity_,
+        d_rng_states_full_, N_, d_seed_idx_
+    );
+    check_cuda_last_error("wolff_initialize_kernel");
+    
+    // Iteratively expand cluster
+    int max_iterations = N_;  // Maximum iterations to prevent infinite loops
+    int iteration = 0;
+    
+    while (iteration < max_iterations) {
+        // Get current queue size
+        int h_read_pos = 0, h_write_pos = 1;
+        
+        // Expand cluster - process all neighbors of current frontier
+        int h_cluster_continue = 0;
+        int* d_cluster_continue;
+        cudaMalloc(&d_cluster_continue, sizeof(int));
+        cudaMemcpy(d_cluster_continue, &h_cluster_continue, sizeof(int), cudaMemcpyHostToDevice);
+        
+        int* d_read_pos, *d_write_pos;
+        cudaMalloc(&d_read_pos, sizeof(int));
+        cudaMalloc(&d_write_pos, sizeof(int));
+        cudaMemcpy(d_read_pos, &h_read_pos, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_write_pos, &h_write_pos, sizeof(int), cudaMemcpyHostToDevice);
+        
+        int frontier_size = h_write_pos - h_read_pos;
+        if (frontier_size <= 0) break;
+        
+        int frontier_blocks = (frontier_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        wolff_expand_kernel<<<frontier_blocks, BLOCK_SIZE>>>(
+            d_spins_, d_visited_, d_queue_, d_read_pos, d_write_pos,
+            d_queue_capacity_, d_rng_states_full_, L_, wolff_prob, d_cluster_continue
+        );
+        check_cuda_last_error("wolff_expand_kernel");
+        
+        // Check if cluster should continue expanding
+        cudaMemcpy(&h_cluster_continue, d_cluster_continue, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&h_read_pos, d_read_pos, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&h_write_pos, d_write_pos, sizeof(int), cudaMemcpyDeviceToHost);
+        
+        cudaFree(d_cluster_continue);
+        cudaFree(d_read_pos);
+        cudaFree(d_write_pos);
+        
+        if (!h_cluster_continue) break;
+        iteration++;
+    }
+    
+    // Flip all spins in the cluster
+    wolff_flip_cluster_kernel<<<num_blocks, BLOCK_SIZE>>>(
+        d_spins_, d_visited_, N_
+    );
+    check_cuda_last_error("wolff_flip_cluster_kernel");
+    
+    cudaDeviceSynchronize();
+    observables_valid_ = false;
+}
+
 
 void Ising2DCUDA::compute_observables() {
     if (observables_valid_) return;

@@ -22,19 +22,28 @@ CPU_SOURCES = main.cpp ising.cpp metropolis.cpp observables.cpp
 CPU_HEADERS = ising.hpp
 TARGET_CPU = ising2d_cpu
 
-.PHONY: all clean cuda cpu
+# Wolff algorithm target
+WOLFF_SOURCES = wolff.cpp ising.cpp metropolis.cpp observables.cpp
+TARGET_WOLFF = ising2d_wolff
 
-all: $(TARGET_CUDA)
+.PHONY: all clean cuda cpu wolff
+
+all: $(TARGET_CUDA) $(TARGET_CPU) $(TARGET_WOLFF)
 
 cuda: $(TARGET_CUDA)
 
 cpu: $(TARGET_CPU)
+
+wolff: $(TARGET_WOLFF)
 
 $(TARGET_CUDA): $(CUDA_SOURCES) $(CUDA_HEADERS)
 	$(NVCC) $(CUDA_FLAGS) -o $@ $(CUDA_SOURCES)
 
 $(TARGET_CPU): $(CPU_SOURCES) $(CPU_HEADERS)
 	$(CXX) $(CXX_FLAGS) -o $@ $(CPU_SOURCES)
+
+$(TARGET_WOLFF): $(WOLFF_SOURCES) $(CPU_HEADERS)
+	$(CXX) $(CXX_FLAGS) -o $@ $(WOLFF_SOURCES)
 
 # Build both for comparison
 both: $(TARGET_CUDA) $(TARGET_CPU)
@@ -47,6 +56,10 @@ test: $(TARGET_CUDA)
 test-cpu: $(TARGET_CPU)
 	./$(TARGET_CPU) --sizes=32 --tmin=2.0 --tmax=2.5 --therm=1000 --meas=5000 --stride=10 --out=test_cpu.csv
 
+# Run quick Wolff test
+test-wolff: $(TARGET_WOLFF)
+	./$(TARGET_WOLFF) --sizes=32 --tmin=2.0 --tmax=2.5 --therm=1000 --meas=5000 --stride=10 --out=test_wolff.csv
+
 # Performance benchmark
 benchmark: $(TARGET_CUDA) $(TARGET_CPU)
 	@echo "=== CPU Benchmark ==="
@@ -56,4 +69,4 @@ benchmark: $(TARGET_CUDA) $(TARGET_CPU)
 	time ./$(TARGET_CUDA) --sizes=64 --tmin=2.2 --tmax=2.3 --therm=5000 --meas=20000 --stride=20 --out=/dev/null
 
 clean:
-	rm -f $(TARGET_CUDA) $(TARGET_CPU) test_gpu.csv test_cpu.csv
+	rm -f $(TARGET_CUDA) $(TARGET_CPU) $(TARGET_WOLFF) test_gpu.csv test_cpu.csv test_wolff.csv

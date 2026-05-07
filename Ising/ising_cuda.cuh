@@ -62,6 +62,37 @@ __global__ void metropolis_checkerboard_kernel(
     float exp_dE8
 );
 
+// Wolff cluster algorithm kernels
+__global__ void wolff_initialize_kernel(
+    int8_t* spins,
+    int* visited,
+    int* queue,
+    int* queue_size,
+    int* queue_capacity,
+    curandState* rng,
+    int N,
+    int* seed_idx
+);
+
+__global__ void wolff_expand_kernel(
+    int8_t* spins,
+    int* visited,
+    int* queue,
+    int* read_pos,
+    int* write_pos,
+    int* queue_capacity,
+    curandState* rng,
+    int L,
+    float wolff_prob,
+    int* cluster_continue
+);
+
+__global__ void wolff_flip_cluster_kernel(
+    int8_t* spins,
+    const int* visited,
+    int N
+);
+
 // Observables computation with reduction
 __global__ void compute_magnetization_kernel(
     const int8_t* spins,
@@ -88,6 +119,7 @@ public:
     void initialize_ordered(int8_t spin_value = 1);
     void set_temperature(double T);
     void sweep_metropolis();
+    void sweep_wolff();
 
     double magnetization_per_spin();
     double energy_per_spin();
@@ -109,6 +141,16 @@ private:
     int* d_partial_energy_;
     int* d_result_;
     int num_blocks_;
+
+    // For Wolff algorithm
+    int* d_visited_;
+    int* d_queue_;
+    int* d_queue_size_;
+    int* d_queue_capacity_;
+    int* d_seed_idx_;
+    
+    // Full RNG states for Wolff (one per site)
+    curandState* d_rng_states_full_;
 
     // Cached observables
     int cached_magnetization_;
