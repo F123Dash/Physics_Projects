@@ -254,7 +254,8 @@ __global__ void wolff_initialize_kernel(
     int8_t* spins,
     int* visited,
     int* queue,
-    int* queue_size,
+    int* read_pos,
+    int* write_pos,
     int* queue_capacity,
     curandState* rng,
     int N,
@@ -275,7 +276,8 @@ __global__ void wolff_initialize_kernel(
         *seed_idx = idx;
         visited[idx] = 1;
         queue[0] = idx;
-        *queue_size = 1;
+        *read_pos = 0;
+        *write_pos = 1;
         *queue_capacity = N;  // Max queue size is N
     }
     __syncthreads();
@@ -290,8 +292,7 @@ __global__ void wolff_expand_kernel(
     int* queue_capacity,
     curandState* rng,
     int L,
-    float wolff_prob,
-    int* cluster_continue
+    float wolff_prob
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
@@ -338,7 +339,6 @@ __global__ void wolff_expand_kernel(
                     int pos = atomicAdd(write_pos, 1);
                     if (pos < *queue_capacity) {
                         queue[pos] = neighbor_idx;
-                        *cluster_continue = 1;
                     }
                 }
             }
@@ -363,7 +363,7 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     : L_(L), N_(L * L), d_spins_(nullptr), d_rng_states_(nullptr),
       exp_dE4_(1.0f), exp_dE8_(1.0f),
       d_partial_mag_(nullptr), d_partial_energy_(nullptr), d_result_(nullptr),
-      d_visited_(nullptr), d_queue_(nullptr), d_queue_size_(nullptr),
+    d_visited_(nullptr), d_queue_(nullptr), d_read_pos_(nullptr), d_write_pos_(nullptr),
       d_queue_capacity_(nullptr), d_seed_idx_(nullptr), d_rng_states_full_(nullptr),
       cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
 {
@@ -406,8 +406,12 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
         "Allocating queue"
     );
     check_cuda_error(
-        cudaMalloc(&d_queue_size_, sizeof(int)),
-        "Allocating queue size"
+        cudaMalloc(&d_read_pos_, sizeof(int)),
+        "Allocating queue read position"
+    );
+    check_cuda_error(
+        cudaMalloc(&d_write_pos_, sizeof(int)),
+        "Allocating queue write position"
     );
     check_cuda_error(
         cudaMalloc(&d_queue_capacity_, sizeof(int)),
@@ -443,7 +447,8 @@ Ising2DCUDA::~Ising2DCUDA() {
     if (d_result_) cudaFree(d_result_);
     if (d_visited_) cudaFree(d_visited_);
     if (d_queue_) cudaFree(d_queue_);
-    if (d_queue_size_) cudaFree(d_queue_size_);
+    if (d_read_pos_) cudaFree(d_read_pos_);
+    if (d_write_pos_) cudaFree(d_write_pos_);
     if (d_queue_capacity_) cudaFree(d_queue_capacity_);
     if (d_seed_idx_) cudaFree(d_seed_idx_);
 }
@@ -513,7 +518,7 @@ void Ising2DCUDA::sweep_wolff(){
     // Initialize cluster with a random seed spin
     int num_blocks_init = 1;
     wolff_initialize_kernel<<<num_blocks_init, BLOCK_SIZE>>>(
-        d_spins_, d_visited_, d_queue_, d_queue_size_, d_queue_capacity_,
+        d_spins_, d_visited_, d_queue_, d_read_pos_, d_write_pos_, d_queue_capacity_,
         d_rng_states_full_, N_, d_seed_idx_
     );
     check_cuda_last_error("wolff_initialize_kernel");
@@ -523,41 +528,22 @@ void Ising2DCUDA::sweep_wolff(){
     int iteration = 0;
     
     while (iteration < max_iterations) {
-        // Get current queue size
-        int h_read_pos = 0, h_write_pos = 1;
-        
-        // Expand cluster - process all neighbors of current frontier
-        int h_cluster_continue = 0;
-        int* d_cluster_continue;
-        cudaMalloc(&d_cluster_continue, sizeof(int));
-        cudaMemcpy(d_cluster_continue, &h_cluster_continue, sizeof(int), cudaMemcpyHostToDevice);
-        
-        int* d_read_pos, *d_write_pos;
-        cudaMalloc(&d_read_pos, sizeof(int));
-        cudaMalloc(&d_write_pos, sizeof(int));
-        cudaMemcpy(d_read_pos, &h_read_pos, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_write_pos, &h_write_pos, sizeof(int), cudaMemcpyHostToDevice);
-        
+        int h_read_pos = 0;
+        int h_write_pos = 0;
+        cudaMemcpy(&h_read_pos, d_read_pos_, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&h_write_pos, d_write_pos_, sizeof(int), cudaMemcpyDeviceToHost);
+
         int frontier_size = h_write_pos - h_read_pos;
         if (frontier_size <= 0) break;
         
         int frontier_blocks = (frontier_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
         wolff_expand_kernel<<<frontier_blocks, BLOCK_SIZE>>>(
-            d_spins_, d_visited_, d_queue_, d_read_pos, d_write_pos,
-            d_queue_capacity_, d_rng_states_full_, L_, wolff_prob, d_cluster_continue
+            d_spins_, d_visited_, d_queue_, d_read_pos_, d_write_pos_,
+            d_queue_capacity_, d_rng_states_full_, L_, wolff_prob
         );
         check_cuda_last_error("wolff_expand_kernel");
-        
-        // Check if cluster should continue expanding
-        cudaMemcpy(&h_cluster_continue, d_cluster_continue, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&h_read_pos, d_read_pos, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&h_write_pos, d_write_pos, sizeof(int), cudaMemcpyDeviceToHost);
-        
-        cudaFree(d_cluster_continue);
-        cudaFree(d_read_pos);
-        cudaFree(d_write_pos);
-        
-        if (!h_cluster_continue) break;
+
+        cudaMemcpy(d_read_pos_, &h_write_pos, sizeof(int), cudaMemcpyHostToDevice);
         iteration++;
     }
     

@@ -67,7 +67,8 @@ __global__ void wolff_initialize_kernel(
     int8_t* spins,
     int* visited,
     int* queue,
-    int* queue_size,
+    int* read_pos,
+    int* write_pos,
     int* queue_capacity,
     curandState* rng,
     int N,
@@ -83,8 +84,7 @@ __global__ void wolff_expand_kernel(
     int* queue_capacity,
     curandState* rng,
     int L,
-    float wolff_prob,
-    int* cluster_continue
+    float wolff_prob
 );
 
 __global__ void wolff_flip_cluster_kernel(
@@ -145,7 +145,8 @@ private:
     // For Wolff algorithm
     int* d_visited_;
     int* d_queue_;
-    int* d_queue_size_;
+    int* d_read_pos_;
+    int* d_write_pos_;
     int* d_queue_capacity_;
     int* d_seed_idx_;
     
