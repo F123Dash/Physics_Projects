@@ -3,10 +3,10 @@
 #include <cmath>
 #include <cstdlib>
 
-// Block size for kernels
 constexpr int BLOCK_SIZE = 256;
+constexpr int ENERGY_BLOCK_X = 16;
+constexpr int ENERGY_BLOCK_Y = 16;
 
-// Error checking utilities
 void check_cuda_error(cudaError_t err, const char* msg) {
     if (err != cudaSuccess) {
         fprintf(stderr, "CUDA Error: %s: %s\n", msg, cudaGetErrorString(err));
@@ -22,7 +22,6 @@ void check_cuda_last_error(const char* msg) {
     }
 }
 
-// SampleAccumulatorCuda methods
 __host__ void SampleAccumulatorCuda::reset() {
     sum_m = 0.0;
     sum_abs_m = 0.0;
@@ -61,7 +60,6 @@ AveragedObservablesCuda finalize_cuda(const SampleAccumulatorCuda& acc) {
     return out;
 }
 
-// Kernel: Initialize cuRAND states
 __global__ void init_rng_kernel(curandState* states, uint64_t seed, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) {
@@ -69,7 +67,6 @@ __global__ void init_rng_kernel(curandState* states, uint64_t seed, int N) {
     }
 }
 
-// Kernel: Initialize spins randomly
 __global__ void init_spins_random_kernel(int8_t* spins, curandState* rng, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) {
@@ -78,7 +75,6 @@ __global__ void init_spins_random_kernel(int8_t* spins, curandState* rng, int N)
     }
 }
 
-// Kernel: Initialize spins to ordered state
 __global__ void init_spins_ordered_kernel(int8_t* spins, int8_t value, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) {
@@ -86,8 +82,6 @@ __global__ void init_spins_ordered_kernel(int8_t* spins, int8_t value, int N) {
     }
 }
 
-// Kernel: Checkerboard Metropolis update
-// Each thread handles one site of the active color
 // color: 0 = even sites (x+y even), 1 = odd sites (x+y odd)
 __global__ void metropolis_checkerboard_kernel(
     int8_t* spins,
@@ -156,10 +150,8 @@ __global__ void metropolis_checkerboard_kernel(
 
     int idx = y * L + x;
 
-    // Get current spin
     int8_t s = spins[idx];
 
-    // Get neighbor spins with periodic boundary conditions
     int xp = (x + 1 < L) ? x + 1 : 0;
     int xm = (x > 0) ? x - 1 : L - 1;
     int yp = (y + 1 < L) ? y + 1 : 0;
@@ -170,10 +162,8 @@ __global__ void metropolis_checkerboard_kernel(
                  spins[yp * L + x] +
                  spins[ym * L + x];
 
-    // Compute energy change: dE = 2 * s * nn_sum
     int dE = 2 * s * nn_sum;
 
-    // Metropolis acceptance
     bool accept = false;
     if (dE <= 0) {
         accept = true;
@@ -186,13 +176,11 @@ __global__ void metropolis_checkerboard_kernel(
         }
     }
 
-    // Flip spin if accepted
     if (accept) {
         spins[idx] = -s;
     }
 }
 
-// Kernel: Compute partial sums of magnetization
 __global__ void compute_magnetization_kernel(
     const int8_t* spins,
     int* partial_sums,
@@ -203,11 +191,9 @@ __global__ void compute_magnetization_kernel(
     int tid = threadIdx.x;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Load into shared memory
     sdata[tid] = (idx < N) ? static_cast<int>(spins[idx]) : 0;
     __syncthreads();
 
-    // Reduction in shared memory
     for (int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             sdata[tid] += sdata[tid + s];
@@ -215,57 +201,78 @@ __global__ void compute_magnetization_kernel(
         __syncthreads();
     }
 
-    // Write result for this block
     if (tid == 0) {
         partial_sums[blockIdx.x] = sdata[0];
     }
 }
 
-// Kernel: Compute partial sums of energy
 // Energy = -J * sum over neighbors. We count each bond once (right and down).
 __global__ void compute_energy_kernel(
     const int8_t* spins,
     int* partial_sums,
     int L
 ) {
-    extern __shared__ int sdata[];
+    __shared__ int8_t tile[ENERGY_BLOCK_Y + 1][ENERGY_BLOCK_X + 1];
+    __shared__ int sdata[ENERGY_BLOCK_X * ENERGY_BLOCK_Y];
 
-    int tid = threadIdx.x;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int N = L * L;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int x = blockIdx.x * ENERGY_BLOCK_X + tx;
+    int y = blockIdx.y * ENERGY_BLOCK_Y + ty;
+    int tid = ty * ENERGY_BLOCK_X + tx;
+
+    int8_t s = 0;
+    if (x < L && y < L) {
+        s = spins[y * L + x];
+    }
+    tile[ty][tx] = s;
+
+    if (tx == ENERGY_BLOCK_X - 1 && y < L) {
+        int x_right = (x + 1 < L) ? x + 1 : 0;
+        tile[ty][ENERGY_BLOCK_X] = spins[y * L + x_right];
+    }
+    if (ty == ENERGY_BLOCK_Y - 1 && x < L) {
+        int y_down = (y + 1 < L) ? y + 1 : 0;
+        tile[ENERGY_BLOCK_Y][tx] = spins[y_down * L + x];
+    }
+
+    __syncthreads();
 
     int local_energy = 0;
-    if (idx < N) {
-        int x = idx % L;
-        int y = idx / L;
-        int8_t s = spins[idx];
+    if (x < L && y < L) {
+        int8_t s_right = 0;
+        int8_t s_down = 0;
 
-        // Right neighbor (periodic)
-        int xp = (x + 1 < L) ? x + 1 : 0;
-        local_energy += -s * spins[y * L + xp];
+        if (x + 1 < L) {
+            s_right = (tx == ENERGY_BLOCK_X - 1) ? tile[ty][ENERGY_BLOCK_X] : tile[ty][tx + 1];
+        } else {
+            s_right = spins[y * L];
+        }
 
-        // Down neighbor (periodic)
-        int yp = (y + 1 < L) ? y + 1 : 0;
-        local_energy += -s * spins[yp * L + x];
+        if (y + 1 < L) {
+            s_down = (ty == ENERGY_BLOCK_Y - 1) ? tile[ENERGY_BLOCK_Y][tx] : tile[ty + 1][tx];
+        } else {
+            s_down = spins[x];
+        }
+
+        local_energy = -static_cast<int>(s) * (static_cast<int>(s_right) + static_cast<int>(s_down));
     }
 
     sdata[tid] = local_energy;
     __syncthreads();
 
-    // Reduction in shared memory
-    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            sdata[tid] += sdata[tid + s];
+    for (int stride = (ENERGY_BLOCK_X * ENERGY_BLOCK_Y) / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            sdata[tid] += sdata[tid + stride];
         }
         __syncthreads();
     }
 
     if (tid == 0) {
-        partial_sums[blockIdx.x] = sdata[0];
+        partial_sums[blockIdx.y * gridDim.x + blockIdx.x] = sdata[0];
     }
 }
 
-// Kernel: Final reduction sum
 __global__ void reduce_sum_kernel(int* data, int* result, int N) {
     extern __shared__ int sdata[];
 
@@ -287,7 +294,6 @@ __global__ void reduce_sum_kernel(int* data, int* result, int N) {
     }
 }
 
-// Wolff kernels
 __global__ void wolff_initialize_kernel(
     int8_t* spins,
     int* visited,
@@ -299,14 +305,11 @@ __global__ void wolff_initialize_kernel(
     int N,
     int* seed_idx
 ) {
-    // Only one thread does this
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        // Reset visited array
         for (int i = 0; i < N; ++i) {
             visited[i] = 0;
         }
         
-        // Pick a random seed spin
         curandState local_state = rng[0];
         int idx = (int)(curand_uniform(&local_state) * N);
         rng[0] = local_state;
@@ -316,7 +319,7 @@ __global__ void wolff_initialize_kernel(
         queue[0] = idx;
         *read_pos = 0;
         *write_pos = 1;
-        *queue_capacity = N;  // Max queue size is N
+        *queue_capacity = N;
     }
     __syncthreads();
 }
@@ -334,7 +337,6 @@ __global__ void wolff_expand_kernel(
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
-    // Get current queue indices
     int curr_read = *read_pos;
     int curr_write = *write_pos;
     int total_in_queue = curr_write - curr_read;
@@ -343,7 +345,6 @@ __global__ void wolff_expand_kernel(
         return;
     }
     
-    // Each thread processes one item from the current queue
     int queue_idx = curr_read + tid;
     int site_idx = queue[queue_idx];
     
@@ -351,7 +352,6 @@ __global__ void wolff_expand_kernel(
     int y = site_idx / L;
     int8_t seed_spin = spins[site_idx];
     
-    // Check all 4 neighbors
     int neighbors[4] = {
         y * L + ((x + 1 < L) ? x + 1 : 0),  // right
         y * L + ((x > 0) ? x - 1 : L - 1),  // left
@@ -362,13 +362,10 @@ __global__ void wolff_expand_kernel(
     for (int i = 0; i < 4; ++i) {
         int neighbor_idx = neighbors[i];
         
-        // If neighbor has same spin and not visited
         if (!visited[neighbor_idx] && spins[neighbor_idx] == seed_spin) {
-            // Try to mark as visited using atomicCAS
             int old_val = atomicCAS(&visited[neighbor_idx], 0, 1);
             
             if (old_val == 0) {
-                // Successfully marked as visited
                 curandState local_state = rng[threadIdx.x + blockIdx.x * blockDim.x];
                 float r = curand_uniform(&local_state);
                 rng[threadIdx.x + blockIdx.x * blockDim.x] = local_state;
@@ -395,36 +392,30 @@ __global__ void wolff_flip_cluster_kernel(
     }
 }
 
-// Ising2DCUDA class implementation
-
 Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     : L_(L), N_(L * L), d_spins_(nullptr), d_rng_states_(nullptr),
       exp_dE4_(1.0f), exp_dE8_(1.0f),
       d_partial_mag_(nullptr), d_partial_energy_(nullptr), d_result_(nullptr),
     d_visited_(nullptr), d_queue_(nullptr), d_read_pos_(nullptr), d_write_pos_(nullptr),
       d_queue_capacity_(nullptr), d_seed_idx_(nullptr), d_rng_states_full_(nullptr),
-      cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
+    cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
 {
-    // Allocate device memory for spins
     check_cuda_error(
         cudaMalloc(&d_spins_, N_ * sizeof(int8_t)),
         "Allocating spins"
     );
 
-    // Allocate cuRAND states (one per half of lattice for checkerboard)
     int half_N = N_ / 2;
     check_cuda_error(
         cudaMalloc(&d_rng_states_, half_N * sizeof(curandState)),
         "Allocating RNG states"
     );
 
-    // Initialize RNG states
     int num_blocks_rng = (half_N + BLOCK_SIZE - 1) / BLOCK_SIZE;
     init_rng_kernel<<<num_blocks_rng, BLOCK_SIZE>>>(d_rng_states_, seed, half_N);
     check_cuda_last_error("init_rng_kernel");
     cudaDeviceSynchronize();
 
-    // Allocate full RNG states for Wolff (one per site)
     check_cuda_error(
         cudaMalloc(&d_rng_states_full_, N_ * sizeof(curandState)),
         "Allocating full RNG states for Wolff"
@@ -434,7 +425,6 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     check_cuda_last_error("init_rng_kernel for full states");
     cudaDeviceSynchronize();
 
-    // Allocate Wolff algorithm buffers
     check_cuda_error(
         cudaMalloc(&d_visited_, N_ * sizeof(int)),
         "Allocating visited array"
@@ -460,14 +450,16 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
         "Allocating seed index"
     );
 
-    // Allocate reduction buffers
     num_blocks_ = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int energy_grid_x = (L_ + ENERGY_BLOCK_X - 1) / ENERGY_BLOCK_X;
+    int energy_grid_y = (L_ + ENERGY_BLOCK_Y - 1) / ENERGY_BLOCK_Y;
+    num_blocks_energy_ = energy_grid_x * energy_grid_y;
     check_cuda_error(
         cudaMalloc(&d_partial_mag_, num_blocks_ * sizeof(int)),
         "Allocating partial magnetization"
     );
     check_cuda_error(
-        cudaMalloc(&d_partial_energy_, num_blocks_ * sizeof(int)),
+        cudaMalloc(&d_partial_energy_, num_blocks_energy_ * sizeof(int)),
         "Allocating partial energy"
     );
     check_cuda_error(
@@ -494,14 +486,12 @@ Ising2DCUDA::~Ising2DCUDA() {
 void Ising2DCUDA::initialize_random() {
     int num_blocks = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    // We need full RNG states for initialization
     curandState* d_full_rng;
     check_cuda_error(
         cudaMalloc(&d_full_rng, N_ * sizeof(curandState)),
         "Allocating full RNG for init"
     );
 
-    // Initialize full RNG with different offset
     init_rng_kernel<<<num_blocks, BLOCK_SIZE>>>(d_full_rng, 42ULL, N_);
     check_cuda_last_error("init full rng");
 
@@ -520,6 +510,19 @@ void Ising2DCUDA::initialize_ordered(int8_t spin_value) {
     check_cuda_last_error("init_spins_ordered_kernel");
     cudaDeviceSynchronize();
     observables_valid_ = false;
+}
+
+void Ising2DCUDA::reseed(uint64_t seed) {
+    int half_N = N_ / 2;
+    int num_blocks_rng = (half_N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    init_rng_kernel<<<num_blocks_rng, BLOCK_SIZE>>>(d_rng_states_, seed, half_N);
+    check_cuda_last_error("init_rng_kernel reseed");
+
+    int num_blocks_full_rng = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    init_rng_kernel<<<num_blocks_full_rng, BLOCK_SIZE>>>(d_rng_states_full_, seed + 1, N_);
+    check_cuda_last_error("init_rng_kernel full reseed");
+
+    cudaDeviceSynchronize();
 }
 
 void Ising2DCUDA::set_temperature(double T) {
@@ -555,7 +558,6 @@ void Ising2DCUDA::sweep_wolff(){
     // wolff_prob = 1 - sqrt(exp_dE4)
     float wolff_prob = 1.0f - sqrtf(exp_dE4_);
     
-    // Initialize cluster with a random seed spin
     int num_blocks_init = 1;
     wolff_initialize_kernel<<<num_blocks_init, BLOCK_SIZE>>>(
         d_spins_, d_visited_, d_queue_, d_read_pos_, d_write_pos_, d_queue_capacity_,
@@ -563,7 +565,6 @@ void Ising2DCUDA::sweep_wolff(){
     );
     check_cuda_last_error("wolff_initialize_kernel");
     
-    // Iteratively expand cluster
     int max_iterations = N_;  // Maximum iterations to prevent infinite loops
     int iteration = 0;
     
@@ -587,7 +588,6 @@ void Ising2DCUDA::sweep_wolff(){
         iteration++;
     }
     
-    // Flip all spins in the cluster
     wolff_flip_cluster_kernel<<<num_blocks, BLOCK_SIZE>>>(
         d_spins_, d_visited_, N_
     );
@@ -601,15 +601,12 @@ void Ising2DCUDA::sweep_wolff(){
 void Ising2DCUDA::compute_observables() {
     if (observables_valid_) return;
 
-    // Compute magnetization
     compute_magnetization_kernel<<<num_blocks_, BLOCK_SIZE, BLOCK_SIZE * sizeof(int)>>>(
         d_spins_, d_partial_mag_, N_
     );
 
-    // Zero the result
     cudaMemset(d_result_, 0, sizeof(int));
 
-    // Final reduction for magnetization
     int reduce_blocks = (num_blocks_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
     reduce_sum_kernel<<<reduce_blocks, BLOCK_SIZE, BLOCK_SIZE * sizeof(int)>>>(
         d_partial_mag_, d_result_, num_blocks_
@@ -617,17 +614,20 @@ void Ising2DCUDA::compute_observables() {
 
     cudaMemcpy(&cached_magnetization_, d_result_, sizeof(int), cudaMemcpyDeviceToHost);
 
-    // Compute energy
-    compute_energy_kernel<<<num_blocks_, BLOCK_SIZE, BLOCK_SIZE * sizeof(int)>>>(
+    int energy_grid_x = (L_ + ENERGY_BLOCK_X - 1) / ENERGY_BLOCK_X;
+    int energy_grid_y = (L_ + ENERGY_BLOCK_Y - 1) / ENERGY_BLOCK_Y;
+    dim3 energy_grid(energy_grid_x, energy_grid_y);
+    dim3 energy_block(ENERGY_BLOCK_X, ENERGY_BLOCK_Y);
+    compute_energy_kernel<<<energy_grid, energy_block>>>(
         d_spins_, d_partial_energy_, L_
     );
+    check_cuda_last_error("compute_energy_kernel");
 
-    // Zero the result
     cudaMemset(d_result_, 0, sizeof(int));
 
-    // Final reduction for energy
+    reduce_blocks = (num_blocks_energy_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
     reduce_sum_kernel<<<reduce_blocks, BLOCK_SIZE, BLOCK_SIZE * sizeof(int)>>>(
-        d_partial_energy_, d_result_, num_blocks_
+        d_partial_energy_, d_result_, num_blocks_energy_
     );
 
     cudaMemcpy(&cached_energy_, d_result_, sizeof(int), cudaMemcpyDeviceToHost);
