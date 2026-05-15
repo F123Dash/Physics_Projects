@@ -79,7 +79,5 @@ private:
 };
 
 SimulationConfig parse_args(int argc, char** argv);
-std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step);
 
-// Helper function to read existing lattice sizes from CSV file
 std::vector<int> get_existing_sizes(const std::string& filename);
