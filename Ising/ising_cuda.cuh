@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <curand_kernel.h>
 
-// Configuration structure (mirrors CPU version)
 struct SimulationConfigCuda {
     int* sizes;
     int num_sizes;
@@ -18,7 +17,6 @@ struct SimulationConfigCuda {
     const char* output_csv;
 };
 
-// Sample accumulator (mirrors CPU version)
 struct SampleAccumulatorCuda {
     double sum_m;
     double sum_abs_m;
@@ -32,7 +30,6 @@ struct SampleAccumulatorCuda {
     __host__ void add(double m_per_spin, double e_per_spin);
 };
 
-// Averaged observables
 struct AveragedObservablesCuda {
     double m;
     double abs_m;
@@ -44,14 +41,12 @@ struct AveragedObservablesCuda {
 
 AveragedObservablesCuda finalize_cuda(const SampleAccumulatorCuda& acc);
 
-// CUDA kernels
 __global__ void init_rng_kernel(curandState* states, uint64_t seed, int N);
 
 __global__ void init_spins_random_kernel(int8_t* spins, curandState* rng, int N);
 
 __global__ void init_spins_ordered_kernel(int8_t* spins, int8_t value, int N);
 
-// Checkerboard Metropolis kernel
 // color: 0 = black sites (x+y even), 1 = white sites (x+y odd)
 __global__ void metropolis_checkerboard_kernel(
     int8_t* spins,
@@ -62,7 +57,6 @@ __global__ void metropolis_checkerboard_kernel(
     float exp_dE8
 );
 
-// Wolff cluster algorithm kernels
 __global__ void wolff_initialize_kernel(
     int8_t* spins,
     int* visited,
@@ -93,7 +87,6 @@ __global__ void wolff_flip_cluster_kernel(
     int N
 );
 
-// Observables computation with reduction
 __global__ void compute_magnetization_kernel(
     const int8_t* spins,
     int* partial_sums,
@@ -106,10 +99,8 @@ __global__ void compute_energy_kernel(
     int L
 );
 
-// Final reduction kernel
 __global__ void reduce_sum_kernel(int* data, int* result, int N);
 
-// CUDA Ising model class
 class Ising2DCUDA {
 public:
     Ising2DCUDA(int L, uint64_t seed);
@@ -117,6 +108,7 @@ public:
 
     void initialize_random();
     void initialize_ordered(int8_t spin_value = 1);
+    void reseed(uint64_t seed);
     void set_temperature(double T);
     void sweep_metropolis();
     void sweep_wolff();
@@ -141,6 +133,7 @@ private:
     int* d_partial_energy_;
     int* d_result_;
     int num_blocks_;
+    int num_blocks_energy_;
 
     // For Wolff algorithm
     int* d_visited_;
@@ -161,6 +154,5 @@ private:
     void compute_observables();
 };
 
-// Utility functions
 void check_cuda_error(cudaError_t err, const char* msg);
 void check_cuda_last_error(const char* msg);
