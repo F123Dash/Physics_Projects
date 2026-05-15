@@ -1,5 +1,4 @@
 #include "ising.hpp"
-
 #include <cmath>
 #include <queue>
 #include <vector>
@@ -153,29 +152,34 @@ void Ising2D::sweep_wolff() {
         }
     }
     
-    // Flip all spins in the cluster and update observables
+    std::vector<char> in_cluster(N_, 0);
     for (int site_idx : cluster) {
-        const int old_spin = spins_[site_idx];
-        const int new_spin = -old_spin;
-        spins_[site_idx] = new_spin;
-        
-        // Update magnetization: change is 2 * (-old_spin) per flipped spin
-        magnetization_total_ += 2 * (-old_spin);
-        
-        // Update energy contribution from this spin
+        in_cluster[site_idx] = 1;
+    }
+
+    double delta_energy = 0.0;
+    for (int site_idx : cluster) {
         const int x = site_idx % L_;
         const int y = site_idx / L_;
-        
-        // Old energy: -old_spin * (neighbors)
-        const int old_nn_sum = spins_[idx(periodic(x + 1), y)] +
-                               spins_[idx(periodic(x - 1), y)] +
-                               spins_[idx(x, periodic(y + 1))] +
-                               spins_[idx(x, periodic(y - 1))];
-        const double old_contrib = -static_cast<double>(old_spin * old_nn_sum);
-        
-        // New energy: -new_spin * (neighbors) = -(-old_spin) * (neighbors) = old_spin * (neighbors)
-        const double new_contrib = -static_cast<double>(new_spin * old_nn_sum);
-        
-        energy_total_ += (new_contrib - old_contrib);
+        const int s = spins_[site_idx];
+        const int neighbors[4] = {
+            idx(periodic(x + 1), y),
+            idx(periodic(x - 1), y),
+            idx(x, periodic(y + 1)),
+            idx(x, periodic(y - 1))
+        };
+
+        for (int i = 0; i < 4; ++i) {
+            const int neighbor_idx = neighbors[i];
+            if (!in_cluster[neighbor_idx]) {
+                delta_energy += 2.0 * static_cast<double>(s * spins_[neighbor_idx]);
+            }
+        }
     }
+    for (int site_idx : cluster) {
+        const int old_spin = spins_[site_idx];
+        spins_[site_idx] = -old_spin;
+        magnetization_total_ += -2 * old_spin;
+    }
+    energy_total_ += delta_energy;
 }
