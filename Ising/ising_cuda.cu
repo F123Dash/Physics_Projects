@@ -98,22 +98,60 @@ __global__ void metropolis_checkerboard_kernel(
     float exp_dE8
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int half_N = (L * L) / 2;
+    int N = L * L;
+    int color_count = (N + (color == 0 ? 1 : 0)) / 2;
 
-    if (tid >= half_N) return;
+    if (tid >= color_count) return;
 
-    // Map thread ID to lattice coordinates for checkerboard pattern
-    // For a row y: if (y % 2 == color), sites start at x=0,2,4,...
-    //              else sites start at x=1,3,5,...
-    int row = tid / (L / 2);
-    int col_half = tid % (L / 2);
+    int x = 0;
+    int y = 0;
 
-    int y = row;
-    int x;
-    if ((y & 1) == color) {
-        x = col_half * 2;       // Even columns: 0, 2, 4, ...
+    if ((L & 1) == 0) {
+        // Even L: every row has L/2 sites of each color.
+        int row = tid / (L / 2);
+        int col_half = tid % (L / 2);
+        y = row;
+        if ((y & 1) == color) {
+            x = col_half * 2;
+        } else {
+            x = col_half * 2 + 1;
+        }
     } else {
-        x = col_half * 2 + 1;   // Odd columns: 1, 3, 5, ...
+        int a = (L + 1) / 2;
+        int b = L / 2;        
+        int full_pairs = L / 2;
+        int full_pair_sites = full_pairs * L;
+        if (tid < full_pair_sites) {
+            int pair = tid / L;
+            int rem = tid - pair * L;
+            if (color == 0) {
+                if (rem < a) {
+                    y = 2 * pair;
+                    x = rem * 2;
+                } else {
+                    y = 2 * pair + 1;
+                    x = (rem - a) * 2 + 1;
+                }
+            } else {
+                if (rem < b) {
+                    y = 2 * pair;
+                    x = rem * 2 + 1;
+                } else {
+                    y = 2 * pair + 1;
+                    x = (rem - b) * 2;
+                }
+            }
+        } else {
+            y = L - 1;
+            int row_count = ((y & 1) == color) ? a : b;
+            int col_half = tid - full_pair_sites;
+            if (col_half >= row_count) return;
+            if ((y & 1) == color) {
+                x = col_half * 2;
+            } else {
+                x = col_half * 2 + 1;
+            }
+        }
     }
 
     int idx = y * L + x;
@@ -491,16 +529,18 @@ void Ising2DCUDA::set_temperature(double T) {
 }
 
 void Ising2DCUDA::sweep_metropolis() {
-    int half_N = N_ / 2;
-    int num_blocks = (half_N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int color0_count = (N_ + 1) / 2;
+    int color1_count = N_ / 2;
+    int num_blocks_color0 = (color0_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int num_blocks_color1 = (color1_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     // Update black sites (color = 0)
-    metropolis_checkerboard_kernel<<<num_blocks, BLOCK_SIZE>>>(
+    metropolis_checkerboard_kernel<<<num_blocks_color0, BLOCK_SIZE>>>(
         d_spins_, d_rng_states_, L_, 0, exp_dE4_, exp_dE8_
     );
 
     // Update white sites (color = 1)
-    metropolis_checkerboard_kernel<<<num_blocks, BLOCK_SIZE>>>(
+    metropolis_checkerboard_kernel<<<num_blocks_color1, BLOCK_SIZE>>>(
         d_spins_, d_rng_states_, L_, 1, exp_dE4_, exp_dE8_
     );
 
