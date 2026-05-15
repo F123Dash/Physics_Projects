@@ -1,5 +1,3 @@
-//Wolff Cluster Algorithm Implementation for 2D Ising Model
-
 #include "ising.hpp"
 
 #include <fstream>
@@ -9,7 +7,6 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-    // Parse command-line arguments
     SimulationConfig cfg;
     try {
         cfg = parse_args(argc, argv);
@@ -18,10 +15,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Seed the random number generator
     std::mt19937_64 rng(cfg.seed);
 
-    // Get temperature grid
     std::vector<double> temps = make_temperature_grid(
         cfg.t_min, cfg.t_max, cfg.t_step, cfg.adaptive_grid
     );
@@ -36,40 +31,33 @@ int main(int argc, char** argv) {
     std::cerr << "Sample stride: " << cfg.sample_stride << "\n";
     std::cerr << "Output: " << cfg.output_csv << "\n\n";
 
-    // Open output file
     std::ofstream outfile(cfg.output_csv, std::ios::app);
     if (!outfile.is_open()) {
         std::cerr << "Error: Cannot open output file " << cfg.output_csv << "\n";
         return 1;
     }
 
-    // Write header if file is empty or new
     outfile.seekp(0, std::ios::end);
     if (outfile.tellp() == 0) {
-        outfile << "T,L,M,|M|,E,M^2,E^2,M^4,U4\n";
+        outfile << "T,L,M,absM,E,M2,E2,M4,U4\n";
     }
 
-    // Simulation loop over all system sizes and temperatures
     for (int L : cfg.sizes) {
         std::cerr << "System size L = " << L << "\n";
 
         for (double T : temps) {
-            // Create Ising2D system
             Ising2D ising(L, rng);
             ising.initialize_random();
             ising.set_temperature(T);
 
-            // Thermalization with Wolff sweeps
             for (int sweep = 0; sweep < cfg.thermal_sweeps; ++sweep) {
                 ising.sweep_wolff();
             }
 
-            // Measurement phase
             SampleAccumulator acc;
             for (int sweep = 0; sweep < cfg.measurement_sweeps; ++sweep) {
                 ising.sweep_wolff();
 
-                // Sample every stride sweeps
                 if (sweep % cfg.sample_stride == 0) {
                     double m = ising.magnetization_per_spin();
                     double e = ising.energy_per_spin();
@@ -77,7 +65,6 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Finalize statistics and write to file
             AveragedObservables obs = finalize(acc);
             
             // Calculate Binder cumulant U4 = 1 - <M^4> / (3 * <M^2>^2)
