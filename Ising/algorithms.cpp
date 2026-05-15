@@ -61,32 +61,34 @@ void Ising2D::set_temperature(double T) {
 }
 
 void Ising2D::sweep_metropolis() {
-    for (int trial = 0; trial < N_; ++trial) {
-        const int p = site_dist_(rng_);
-        const int x = p % L_;
-        const int y = p / L_;
+    for (int color = 0; color < 2; ++color) {
+        for (int y = 0; y < L_; ++y) {
+            const int parity = (y & 1) ^ color;
+            for (int x = parity; x < L_; x += 2) {
+                const int p = idx(x, y);
+                const int s = spins_[p];
+                const int nn_sum = spins_[idx(periodic(x + 1), y)] +
+                                   spins_[idx(periodic(x - 1), y)] +
+                                   spins_[idx(x, periodic(y + 1))] +
+                                   spins_[idx(x, periodic(y - 1))];
 
-        const int s = spins_[p];
-        const int nn_sum = spins_[idx(periodic(x + 1), y)] +
-                           spins_[idx(periodic(x - 1), y)] +
-                           spins_[idx(x, periodic(y + 1))] +
-                           spins_[idx(x, periodic(y - 1))];
+                const int dE = 2 * s * nn_sum;
 
-        const int dE = 2 * s * nn_sum;
+                bool accept = false;
+                if (dE <= 0) {
+                    accept = true;
+                } else if (dE == 4) {
+                    accept = (unif01_(rng_) < boltzmann_dE4_);
+                } else if (dE == 8) {
+                    accept = (unif01_(rng_) < boltzmann_dE8_);
+                }
 
-        bool accept = false;
-        if (dE <= 0) {
-            accept = true;
-        } else if (dE == 4) {
-            accept = (unif01_(rng_) < boltzmann_dE4_);
-        } else if (dE == 8) {
-            accept = (unif01_(rng_) < boltzmann_dE8_);
-        }
-
-        if (accept) {
-            spins_[p] = -s;
-            magnetization_total_ += -2 * s;
-            energy_total_ += static_cast<double>(dE);
+                if (accept) {
+                    spins_[p] = -s;
+                    magnetization_total_ += -2 * s;
+                    energy_total_ += static_cast<double>(dE);
+                }
+            }
         }
     }
 }
@@ -100,27 +102,15 @@ double Ising2D::energy_per_spin() const {
 }
 
 void Ising2D::sweep_wolff() {
-    // Wolff cluster algorithm for 2D Ising model
-    // Each sweep performs one cluster flip
-    
     std::vector<bool> visited(N_, false);
-    
-    // Pick a random seed spin
     const int seed_idx = site_dist_(rng_);
     const int seed_spin = spins_[seed_idx];
-    
-    // Queue for cluster growth (BFS)
     std::queue<int> cluster_queue;
     std::vector<int> cluster;
-    
     cluster_queue.push(seed_idx);
     visited[seed_idx] = true;
     cluster.push_back(seed_idx);
-    
-    // Wolff probability: P = 1 - exp(-2*beta*J) with J=1
     const double wolff_prob = 1.0 - std::exp(-2.0 * beta_);
-    
-    // Grow the cluster using BFS
     while (!cluster_queue.empty()) {
         const int current_idx = cluster_queue.front();
         cluster_queue.pop();
@@ -128,7 +118,6 @@ void Ising2D::sweep_wolff() {
         const int x = current_idx % L_;
         const int y = current_idx / L_;
         
-        // Check all 4 nearest neighbors
         const int neighbors[4] = {
             idx(periodic(x + 1), y),
             idx(periodic(x - 1), y),
@@ -138,12 +127,8 @@ void Ising2D::sweep_wolff() {
         
         for (int i = 0; i < 4; ++i) {
             const int neighbor_idx = neighbors[i];
-            
-            // If neighbor has same spin and not visited, consider adding it
             if (!visited[neighbor_idx] && spins_[neighbor_idx] == seed_spin) {
                 visited[neighbor_idx] = true;
-                
-                // Add to cluster with Wolff probability
                 if (unif01_(rng_) < wolff_prob) {
                     cluster.push_back(neighbor_idx);
                     cluster_queue.push(neighbor_idx);
