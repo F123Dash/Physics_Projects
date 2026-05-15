@@ -29,17 +29,14 @@ std::vector<int> get_existing_sizes(const std::string& filename) {
     std::set<int> sizes_set;
     std::ifstream file(filename);
     if (!file.is_open()) {
-        // File does not exist or cannot be read, return empty
         return std::vector<int>();
     }
     
     std::string line;
-    // Skip header
     if (!std::getline(file, line)) {
         return std::vector<int>();
     }
     
-    // Read data lines and extract L values (column index 1)
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         std::stringstream ss(line);
@@ -50,7 +47,6 @@ std::vector<int> get_existing_sizes(const std::string& filename) {
                 try {
                     sizes_set.insert(std::stoi(cell));
                 } catch (...) {
-                    // Skip malformed lines
                 }
                 break;
             }
@@ -113,7 +109,6 @@ SimulationConfig parse_args(int argc, char** argv) {
         throw std::runtime_error("Sweep and stride values must be positive (thermal can be zero).\n");
     }
 
-    // Filter out existing sizes if in append mode
     if (cfg.append_mode) {
         std::vector<int> existing = get_existing_sizes(cfg.output_csv);
         std::vector<int> new_sizes;
@@ -133,14 +128,6 @@ SimulationConfig parse_args(int argc, char** argv) {
     }
 
     return cfg;
-}
-
-std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step) {
-    std::vector<double> temps;
-    for (double t = t_min; t <= t_max + 1e-12; t += t_step) {
-        temps.push_back(t);
-    }
-    return temps;
 }
 
 static std::vector<double> make_uniform_grid(double t_min, double t_max, double t_step) {
