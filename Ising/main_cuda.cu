@@ -12,7 +12,6 @@
 #include <sstream>
 #include <set>
 
-// Helper functions for argument parsing
 static bool starts_with(const char* s, const char* pref) {
     return strncmp(s, pref, strlen(pref)) == 0;
 }
@@ -39,17 +38,14 @@ std::vector<int> get_existing_sizes(const std::string& filename) {
     std::set<int> sizes_set;
     std::ifstream file(filename);
     if (!file.is_open()) {
-        // File does not exist or cannot be read, return empty
         return std::vector<int>();
     }
     
     std::string line;
-    // Skip header
     if (!std::getline(file, line)) {
         return std::vector<int>();
     }
     
-    // Read data lines and extract L values (column index 1)
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         std::stringstream ss(line);
@@ -60,7 +56,6 @@ std::vector<int> get_existing_sizes(const std::string& filename) {
                 try {
                     sizes_set.insert(std::stoi(cell));
                 } catch (...) {
-                    // Skip malformed lines
                 }
                 break;
             }
@@ -155,7 +150,6 @@ Config parse_args(int argc, char** argv) {
         exit(1);
     }
 
-    // Filter out existing sizes if in append mode
     if (cfg.append_mode) {
         std::vector<int> existing = get_existing_sizes(cfg.output_csv);
         std::vector<int> new_sizes;
@@ -225,15 +219,12 @@ int main(int argc, char** argv) {
     std::vector<double> temps = make_temperature_grid(
         cfg.t_min, cfg.t_max, cfg.t_step, cfg.adaptive_grid);
 
-    // Check if file exists for header logic
     std::ifstream infile(cfg.output_csv);
     bool file_exists = infile.good();
     infile.close();
 
-    // Print GPU info
     print_gpu_info();
 
-    // Open output file in append or truncate mode
     std::ofstream out;
     if (cfg.append_mode && file_exists) {
         out.open(cfg.output_csv, std::ios_base::app);
@@ -246,7 +237,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Only write header if file is new or not appending
     if (!cfg.append_mode || !file_exists) {
         out << "T,L,M,absM,E,M2,E2,M4\n";
     }
@@ -277,17 +267,17 @@ int main(int argc, char** argv) {
            cfg.thermal_sweeps, cfg.measurement_sweeps, cfg.sample_stride);
     printf("  seed: %lu\n", cfg.seed);
 
-    // Main simulation loop
     for (int L : cfg.sizes) {
         printf("\nL=%d\n", L);
 
+        Ising2DCUDA model(L, cfg.seed + static_cast<uint64_t>(L * 1000));
+
         for (double T : temps) {
-            // Create model for this (L, T) point
-            Ising2DCUDA model(L, cfg.seed + static_cast<uint64_t>(L * 1000 + static_cast<int>(T * 1000)));
+            uint64_t run_seed = cfg.seed + static_cast<uint64_t>(L * 1000 + static_cast<int>(T * 1000));
             model.initialize_random();
+            model.reseed(run_seed);
             model.set_temperature(T);
 
-            // Thermalization
             for (int s = 0; s < cfg.thermal_sweeps; ++s) {
                 if (cfg.algorithm == "wolff") {
                     model.sweep_wolff();
@@ -296,7 +286,6 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Measurement
             SampleAccumulatorCuda acc;
             acc.reset();
 
