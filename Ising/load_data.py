@@ -17,7 +17,6 @@ def load_ising_csv(path: str) -> pd.DataFrame:
     df["chi"] = N * (df["M2"] - df["M"] ** 2) / df["T"]
     df["C"] = (df["E2"] - df["E"] ** 2) / (df["T"] ** 2)
     
-    # Compute Binder cumulant if M4 available
     if "M4" in df.columns:
         # U = 1 - <M^4> / (3 * <M^2>^2)
         # Clamp M2 to avoid division by zero at high T
