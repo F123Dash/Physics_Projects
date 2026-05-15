@@ -1,5 +1,7 @@
 #include "ising.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -11,14 +13,12 @@ int main(int argc, char** argv) {
         const std::vector<double> temps = make_temperature_grid(
             cfg.t_min, cfg.t_max, cfg.t_step, cfg.adaptive_grid);
 
-        // Check if file exists for header logic
         std::ifstream infile(cfg.output_csv);
         bool file_exists = infile.good();
         infile.close();
 
         std::mt19937_64 rng(cfg.seed);
 
-        // Open in append mode if configured, otherwise truncate
         std::ofstream out;
         if (cfg.append_mode && file_exists) {
             out.open(cfg.output_csv, std::ios_base::app);
@@ -30,7 +30,6 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Failed to open output file: " + cfg.output_csv);
         }
 
-        // Only write header if file is new or not appending
         if (!cfg.append_mode || !file_exists) {
             out << "T,L,M,absM,E,M2,E2,M4\n";
         }
@@ -58,13 +57,22 @@ int main(int argc, char** argv) {
             std::cout << "step " << cfg.t_step << "\n";
         }
         std::cout << "  sweeps: therm=" << cfg.thermal_sweeps
-                  << ", meas=" << cfg.measurement_sweeps
-                  << ", stride=" << cfg.sample_stride << "\n";
+              << ", meas=" << cfg.measurement_sweeps
+              << ", stride(base)=" << cfg.sample_stride
+              << " (auto-scale ~ (L/32)^2.17)\n";
 
         for (int L : cfg.sizes) {
             std::cout << "\nL=" << L << "\n";
+            constexpr double stride_ref_L = 32.0;
+            constexpr double stride_z = 2.17;
+            double scale = std::pow(static_cast<double>(L) / stride_ref_L, stride_z);
+            int scaled_stride = static_cast<int>(std::lround(cfg.sample_stride * scale));
+            int stride = std::max(cfg.sample_stride, scaled_stride);
+            stride = std::min(stride, cfg.measurement_sweeps);
+            if (stride != cfg.sample_stride) {
+                std::cout << "  stride(L)=" << stride << " (scaled from " << cfg.sample_stride << ")\n";
+            }
             for (double T : temps) {
-                // CRITICAL FIX: Reinitialize state at each temperature
                 Ising2D model(L, rng);
                 model.initialize_random();
                 model.set_temperature(T);
@@ -76,7 +84,7 @@ int main(int argc, char** argv) {
                 SampleAccumulator acc;
                 for (int s = 0; s < cfg.measurement_sweeps; ++s) {
                     model.sweep_metropolis();
-                    if ((s + 1) % cfg.sample_stride == 0) {
+                    if ((s + 1) % stride == 0) {
                         acc.add(model.magnetization_per_spin(), model.energy_per_spin());
                     }
                 }
