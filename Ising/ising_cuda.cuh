@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <random>
+#include <vector>
+#include <cuda_runtime.h>
 #include <curand_kernel.h>
 
 struct SimulationConfigCuda {
@@ -111,12 +114,15 @@ public:
     void reseed(uint64_t seed);
     void set_temperature(double T);
     void sweep_metropolis();
+    void sweep_metropolis(cudaStream_t stream);
     void sweep_wolff();
 
     double magnetization_per_spin();
     double energy_per_spin();
 
 private:
+    friend class ParallelTempering;
+
     int L_;
     int N_;
 
@@ -138,12 +144,11 @@ private:
     // For Wolff algorithm
     int* d_visited_;
     int* d_queue_;
+    int* d_cluster_continue_;
     int* d_read_pos_;
     int* d_write_pos_;
     int* d_queue_capacity_;
     int* d_seed_idx_;
-    
-    // Full RNG states for Wolff (one per site)
     curandState* d_rng_states_full_;
 
     // Cached observables
@@ -152,6 +157,46 @@ private:
     bool observables_valid_;
 
     void compute_observables();
+    void swap_spins_with(Ising2DCUDA& other);
+};
+
+class ParallelTempering {
+public:
+    ParallelTempering(
+        int n_replicas,
+        const std::vector<double>& temps,
+        int L,
+        uint64_t seed
+    );
+    ~ParallelTempering();
+
+    void sweep_all(int n_sweeps);
+    std::vector<double> attempt_swaps();
+    double magnetization(int replica_idx);
+    double energy(int replica_idx);
+    std::vector<double> acceptance_rates() const;
+
+    static std::vector<double> build_temperature_ladder(
+        double t_min,
+        double t_max,
+        int n_replicas,
+        double tc = 2.2692
+    );
+
+private:
+    int n_replicas_;
+    int L_;
+    std::vector<double> temps_;
+    std::vector<Ising2DCUDA*> replicas_;
+    std::vector<cudaStream_t> streams_;
+
+    std::vector<int> swap_attempts_;
+    std::vector<int> swap_accepts_;
+    std::vector<std::vector<int>> swap_history_;
+    std::vector<int> swap_history_pos_;
+
+    std::mt19937_64 swap_rng_;
+    bool even_swap_pass_;
 };
 
 void check_cuda_error(cudaError_t err, const char* msg);
