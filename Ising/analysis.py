@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from scipy.interpolate import interp1d
+from scipy.special import logsumexp
 
 from load_data import load_ising_csv
 
@@ -20,8 +21,185 @@ class CriticalEstimates:
     beta_stderr: float
 
 
+class WHAMAnalysis:
+    def __init__(self,
+        simulation_temps: list[float],
+        energy_histograms: dict[float, np.ndarray],energy_bin_edges: np.ndarray,n_samples: dict[float, int],) -> None:
+        if len(simulation_temps) == 0:
+            raise ValueError("WHAM requires at least one simulation temperature.")
+
+        self.temps = np.array(simulation_temps, dtype=float)
+        self.energy_bin_edges = np.asarray(energy_bin_edges, dtype=float)
+        if self.energy_bin_edges.ndim != 1 or self.energy_bin_edges.size < 2:
+            raise ValueError("energy_bin_edges must be a 1D array of length >= 2.")
+
+        self.energy_bins = 0.5 * (self.energy_bin_edges[:-1] + self.energy_bin_edges[1:])
+        if not np.allclose(self.energy_bins, np.round(self.energy_bins)):
+            raise ValueError("Energy bins must be integer-valued for Ising energies.")
+
+        n_bins = self.energy_bins.size
+        hist_list = []
+        sample_counts = []
+        for T in self.temps:
+            if T not in energy_histograms:
+                raise ValueError(f"Missing energy histogram for T={T}.")
+            if T not in n_samples:
+                raise ValueError(f"Missing sample count for T={T}.")
+
+            hist = np.asarray(energy_histograms[T], dtype=float)
+            if hist.ndim != 1 or hist.size != n_bins:
+                raise ValueError(f"Histogram for T={T} has incorrect bin count.")
+            hist_list.append(hist)
+            sample_counts.append(int(n_samples[T]))
+
+        self.energy_histograms = np.stack(hist_list, axis=0)
+        self.n_samples = np.array(sample_counts, dtype=float)
+        if np.any(self.n_samples <= 0):
+            raise ValueError("All sample counts must be positive.")
+
+        self.beta = 1.0 / self.temps
+        self.log_g = None
+        self.f_k = np.zeros_like(self.temps)
+
+        self._last_observable_T_grid = None
+        self._last_observable_values = None
+        self._last_chi_T_grid = None
+        self._last_chi_values = None
+
+    def fit(self, max_iter: int = 10000, tol: float = 1e-8) -> bool:
+        log_hist = np.where(self.energy_histograms > 0.0, np.log(self.energy_histograms), -np.inf)
+        log_n = np.log(self.n_samples)
+
+        converged = False
+        for it in range(max_iter):
+            log_den = logsumexp(
+                log_n[:, None] + self.f_k[:, None] - self.beta[:, None] * self.energy_bins[None, :],
+                axis=0,
+            )
+            log_g = logsumexp(log_hist, axis=0) - log_den
+
+            log_Z = logsumexp(log_g[None, :] - self.beta[:, None] * self.energy_bins[None, :], axis=1)
+            new_f = -log_Z
+
+            delta = float(np.max(np.abs(new_f - self.f_k)))
+            if it % 100 == 0:
+                print(f"WHAM iter {it}: max |delta f_k| = {delta:.3e}")
+
+            self.f_k = new_f
+            self.log_g = log_g
+
+            if delta < tol:
+                converged = True
+                break
+
+        return converged
+
+    def _combine_observable_by_energy(self,observable_histograms: dict[float, np.ndarray],) -> np.ndarray:
+        obs_list = []
+        for T in self.temps:
+            if T not in observable_histograms:
+                raise ValueError(f"Missing observable histogram for T={T}.")
+            obs = np.asarray(observable_histograms[T], dtype=float)
+            if obs.ndim != 1 or obs.size != self.energy_bins.size:
+                raise ValueError(f"Observable histogram for T={T} has incorrect bin count.")
+            obs_list.append(obs)
+
+        obs_stack = np.stack(obs_list, axis=0)
+        counts = self.energy_histograms
+        denom = np.sum(counts, axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            obs_E = np.where(denom > 0.0, np.sum(counts * obs_stack, axis=0) / denom, 0.0)
+        return obs_E
+
+    def _reweight_observable(self, obs_E: np.ndarray, beta: float) -> float:
+        if self.log_g is None:
+            raise RuntimeError("fit() must converge before reweighting observables.")
+
+        log_w = self.log_g - beta * self.energy_bins
+        log_Z = logsumexp(log_w)
+
+        pos_mask = obs_E > 0.0
+        neg_mask = obs_E < 0.0
+
+        pos_term = -np.inf
+        neg_term = -np.inf
+        if np.any(pos_mask):
+            pos_term = logsumexp(log_w[pos_mask] + np.log(obs_E[pos_mask]))
+        if np.any(neg_mask):
+            neg_term = logsumexp(log_w[neg_mask] + np.log(-obs_E[neg_mask]))
+
+        pos_val = 0.0 if not np.isfinite(pos_term) else np.exp(pos_term - log_Z)
+        neg_val = 0.0 if not np.isfinite(neg_term) else np.exp(neg_term - log_Z)
+        return pos_val - neg_val
+
+    def observable_vs_T(
+        self,
+        T_grid: np.ndarray,
+        observable_histograms: dict[float, np.ndarray],
+    ) -> np.ndarray:
+        obs_E = self._combine_observable_by_energy(observable_histograms)
+        T_grid = np.asarray(T_grid, dtype=float)
+        out = np.empty_like(T_grid, dtype=float)
+        for i, T in enumerate(T_grid):
+            out[i] = self._reweight_observable(obs_E, beta=1.0 / T)
+
+        self._last_observable_T_grid = T_grid
+        self._last_observable_values = out
+        return out
+
+    def susceptibility_vs_T(
+        self,
+        T_grid: np.ndarray,
+        M2_histograms: dict[float, np.ndarray],
+        absM_histograms: dict[float, np.ndarray],
+        L: int,
+    ) -> np.ndarray:
+        m2_E = self._combine_observable_by_energy(M2_histograms)
+        abs_m_E = self._combine_observable_by_energy(absM_histograms)
+
+        T_grid = np.asarray(T_grid, dtype=float)
+        chi = np.empty_like(T_grid, dtype=float)
+        n_spins = float(L * L)
+        for i, T in enumerate(T_grid):
+            beta = 1.0 / T
+            m2 = self._reweight_observable(m2_E, beta)
+            abs_m = self._reweight_observable(abs_m_E, beta)
+            chi[i] = n_spins * (m2 - abs_m * abs_m) / T
+
+        self._last_chi_T_grid = T_grid
+        self._last_chi_values = chi
+        return chi
+
+    def find_chi_peak(self, T_grid: np.ndarray, L: int) -> tuple[float, float]:
+        if self._last_chi_T_grid is None or self._last_chi_values is None:
+            raise ValueError("Run susceptibility_vs_T() before calling find_chi_peak().")
+
+        T_grid = np.asarray(T_grid, dtype=float)
+        if T_grid.shape != self._last_chi_T_grid.shape or not np.allclose(T_grid, self._last_chi_T_grid):
+            raise ValueError("T_grid does not match the last susceptibility evaluation.")
+
+        idx = int(np.argmax(self._last_chi_values))
+        return float(T_grid[idx]), float(self._last_chi_values[idx])
+
+    def check_physics(self, T_low: float, T_high: float) -> None:
+        if self._last_observable_T_grid is None or self._last_observable_values is None:
+            raise ValueError("Run observable_vs_T() for |M| before calling check_physics().")
+
+        T_grid = self._last_observable_T_grid
+        abs_m = self._last_observable_values
+        if T_low < np.min(T_grid) or T_high > np.max(T_grid):
+            raise ValueError("T_low/T_high must lie within the last observable grid.")
+
+        low_val = float(np.interp(T_low, T_grid, abs_m))
+        high_val = float(np.interp(T_high, T_grid, abs_m))
+
+        if low_val <= 0.8:
+            raise ValueError(f"WHAM physics check failed: |M|(T_low)={low_val:.3f} <= 0.8")
+        if high_val >= 0.1:
+            raise ValueError(f"WHAM physics check failed: |M|(T_high)={high_val:.3f} >= 0.1")
+
+
 def block_average(data: np.ndarray, block_size: int) -> np.ndarray:
-    """Compute block averages to reduce autocorrelation bias."""
     n = len(data) // block_size
     if n == 0:
         return data
@@ -30,10 +208,7 @@ def block_average(data: np.ndarray, block_size: int) -> np.ndarray:
 
 
 def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) -> float:
-    """Find crossing point via sign-change detection."""
     diff = u1 - u2  # Don't take absolute value!
-    
-    # Remove any NaN values that may arise from extrapolation
     valid_mask = ~np.isnan(diff)
     
     if np.count_nonzero(valid_mask) < 10:
@@ -46,9 +221,6 @@ def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) ->
     
     if len(sign_changes) == 0:
         return float('nan')
-    
-    # Among sign changes, prefer those in physical range [2.1, 2.5]
-    # If none in range, take all
     physical_range_mask = np.array([
         2.1 <= (t_valid[i] + t_valid[i+1])/2.0 <= 2.5 
         for i in sign_changes
@@ -58,9 +230,6 @@ def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) ->
         candidates = sign_changes[physical_range_mask]
     else:
         candidates = sign_changes
-    
-    # Pick crossing with smallest MINIMUM absolute difference across bracket
-    # (excludes oscillations where one endpoint is far from crossing)
     abs_diffs = np.array([
         min(abs(diff_valid[idx]), abs(diff_valid[idx+1]))
         for idx in candidates
@@ -81,7 +250,6 @@ def _find_binder_crossing(t_grid: np.ndarray, u1: np.ndarray, u2: np.ndarray) ->
 
 
 def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
-    """Estimate Tc via finite-size EXTRAPOLATION of Binder crossings."""
     sizes = sorted(df["L"].unique())
     
     if len(sizes) < 2:
@@ -119,8 +287,6 @@ def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
             continue
         
         t_grid = np.linspace(t_min, t_max, 500)
-        
-        # Interpolate using linear to avoid extrapolation issues
         try:
             f1 = interp1d(g1["T"], g1["U"], kind='linear', bounds_error=True)
             f2 = interp1d(g2["T"], g2["U"], kind='linear', bounds_error=True)
@@ -159,7 +325,6 @@ def estimate_tc_binder(df: pd.DataFrame) -> Tuple[float, float, list]:
 
 
 def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, float, float]:
-    """Estimate Tc(L) from χ peak (primary, numerically robust)."""
     from scipy.signal import savgol_filter
     
     tc_by_L = {}
@@ -183,7 +348,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
     for L in Ls_all:
         if L < 64:
             continue
-        # Check if Tc is within reasonable range of median (outlier rejection)
         if abs(tc_by_L[L] - median_tc) < 0.2:
             valid_Ls.append(L)
     
@@ -202,7 +366,6 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         Ls_large = np.array([L for L, _ in filtered], dtype=float)
         tcL = np.array([tc for _, tc in filtered], dtype=float)
     
-    # If monotonic filtering leaves too few points, use the largest available sizes.
     if len(Ls_large) < 3:
         fallback_sizes = valid_Ls if len(valid_Ls) > 0 else Ls_all
         if len(fallback_sizes) > 0:
@@ -255,22 +418,21 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
     tc_inf_stderr = float(stderr)
     
     if not (2.1 < tc_inf < 2.4):
-        print(f"⚠ Tc({tc_inf:.4f}) outside physical range [2.1, 2.4]; using mean of largest systems")
+        print(f" Tc({tc_inf:.4f}) outside physical range [2.1, 2.4]; using mean of largest systems")
         tc_inf = float(np.mean(tcL))
         tc_inf_stderr = float(np.std(tcL)) if len(tcL) > 1 else 0.0
     
-    print(f"✓ Using χ-peak extrapolation (largest systems only, weighted): Tc(∞) = {tc_inf:.6f} ± {tc_inf_stderr:.6f}")
+    print(f" Using χ-peak extrapolation (largest systems only, weighted): Tc(∞) = {tc_inf:.6f} ± {tc_inf_stderr:.6f}")
     print(f"  Finite-size relation: Tc(L) = {intercept:.6f} + {slope:.6f}/L (R² = {r_sq:.4f})")
     print(f"  Systems used: L = {[int(L) for L in Ls_large]}")
     if len(Ls_large) <= 2:
-        print("  ⚠ Using only 2 lattice sizes → Tc uncertainty is underestimated")
+        print("   Using only 2 lattice sizes  Tc uncertainty is underestimated")
     
     # Return tc_inf for BOTH plotting and beta fitting (consistency)
     return tc_by_L, tc_inf, tc_inf_stderr, tc_inf
 
 
 def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 0.1, nu: float = 1.0) -> Tuple[float, float]:
-    """Estimate beta from largest system below Tc using strict fitting window."""
     large_l_df = df[df["L"] >= 64]
     if len(large_l_df) > 0:
         lmax = int(large_l_df["L"].max())
@@ -324,7 +486,7 @@ def estimate_beta_collapse(df: pd.DataFrame, tc_est: float, beta_guess: float = 
     r2 = 1.0 - ss_res / (ss_tot + 1e-10)
     
     window_str = f"[{T_min:.3f}, {T_max:.3f}] K"
-    print(f"  Using window: ΔT ∈ [{tau.min():.4f}, {tau.max():.4f}] K")
+    print(f"  Using window: deltaT == [{tau.min():.4f}, {tau.max():.4f}] K")
     print(f"  L={lmax} (largest system): β = {beta_fit:.4f} (R² = {r2:.4f}, T ∈ {window_str}, {len(x)} pts)")
     
     betas = [beta_fit]
@@ -370,7 +532,6 @@ def _beta_loglog_selection(
 
 
 def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]:
-    """Fit beta from LARGEST-L ONLY below Tc via log M = beta log(Tc-T) + c."""
     min_l_for_beta = 64
     
     large_l_df = df[df["L"] >= min_l_for_beta]
@@ -379,7 +540,7 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
         print(f"Beta fit: Using L={lmax} (>= {min_l_for_beta})")
     else:
         lmax = int(df["L"].max())
-        print(f"⚠ No L >= {min_l_for_beta}; using largest available L={lmax}")
+        print(f" No L >= {min_l_for_beta}; using largest available L={lmax}")
     
     if np.isnan(lmax):
         raise RuntimeError("No valid lattice sizes found")
@@ -412,15 +573,255 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
     _ = intercept
     
     if slope < 0.07 or slope > 0.18:
-        print(f"  ⚠ WARNING: Beta={slope:.4f} outside typical range [0.07, 0.18] (likely due to Tc uncertainty)")
+        print(f"   WARNING: Beta={slope:.4f} outside typical range [0.07, 0.18] (likely due to Tc uncertainty)")
     
-    print(f"  Fit: log(M) = {slope:.4f} * log(ΔT) (R²={r_sq:.4f})")
+    print(f"  Fit: log(M) = {slope:.4f} * log(deltaT) (R²={r_sq:.4f})")
     
     return float(slope), float(stderr)
 
 
+def estimate_eta(df: pd.DataFrame, tc_est: float, tc_window: float = 0.01) -> Tuple[float, float]:
+    if "chi" not in df.columns:
+        raise ValueError("chi column missing; run load_ising_csv to compute chi.")
+
+    records = []
+    for L, g in df.groupby("L"):
+        mask = (g["T"] >= tc_est - tc_window) & (g["T"] <= tc_est + tc_window)
+        if np.count_nonzero(mask) == 0:
+            continue
+        chi_mean = float(np.mean(g.loc[mask, "chi"].to_numpy()))
+        if chi_mean > 0:
+            records.append((float(L), chi_mean))
+
+    if len(records) < 4:
+        raise ValueError("Need at least 4 lattice sizes with chi data near Tc to estimate eta.")
+
+    Ls = np.array([r[0] for r in records], dtype=float)
+    chis = np.array([r[1] for r in records], dtype=float)
+    x = np.log(Ls)
+    y = np.log(chis)
+
+    slope, intercept, r_sq, _, stderr = stats.linregress(x, y)
+    _ = intercept
+    _ = r_sq
+    eta = 2.0 - slope
+    eta_stderr = float(stderr)
+    return float(eta), eta_stderr
+
+
+def estimate_gamma(df: pd.DataFrame) -> Tuple[float, float]:
+    if "chi" not in df.columns:
+        raise ValueError("chi column missing; run load_ising_csv to compute chi.")
+
+    from scipy.signal import savgol_filter
+
+    records = []
+    for L, g in df.groupby("L"):
+        chi_vals = g.sort_values("T")["chi"].to_numpy()
+        n_points = len(chi_vals)
+        if n_points == 0:
+            continue
+
+        if n_points >= 7:
+            chi_smooth = savgol_filter(chi_vals, window_length=7, polyorder=3)
+        elif n_points >= 5:
+            chi_smooth = savgol_filter(chi_vals, window_length=5, polyorder=3)
+        elif n_points >= 3:
+            chi_smooth = savgol_filter(chi_vals, window_length=3, polyorder=2)
+        else:
+            chi_smooth = chi_vals
+
+        chi_max = float(np.max(chi_smooth))
+        if chi_max > 0:
+            records.append((float(L), chi_max))
+
+    if len(records) < 3:
+        raise ValueError("Need at least 3 lattice sizes to estimate gamma.")
+
+    Ls = np.array([r[0] for r in records], dtype=float)
+    chi_max = np.array([r[1] for r in records], dtype=float)
+    x = np.log(Ls)
+    y = np.log(chi_max)
+
+    slope, intercept, r_sq, _, stderr = stats.linregress(x, y)
+    _ = intercept
+    _ = r_sq
+    gamma = float(slope)
+    gamma_stderr = float(stderr)
+
+    if gamma < 1.5 or gamma > 2.0:
+        print(f"WARNING: gamma={gamma:.4f} outside expected range [1.5, 2.0]")
+
+    return gamma, gamma_stderr
+
+
+def estimate_alpha_logL(df: pd.DataFrame) -> Tuple[float, float]:
+    if "C" not in df.columns:
+        raise ValueError("C column missing; run load_ising_csv to compute specific heat.")
+
+    records = []
+    for L, g in df.groupby("L"):
+        c_max = float(np.max(g["C"].to_numpy()))
+        records.append((float(L), c_max))
+
+    if len(records) < 3:
+        raise ValueError("Need at least 3 lattice sizes to estimate alpha from log(L) scaling.")
+
+    Ls = np.array([r[0] for r in records], dtype=float)
+    C_max = np.array([r[1] for r in records], dtype=float)
+    x = np.log(Ls)
+    y = C_max
+
+    slope, intercept, r_sq, _, stderr = stats.linregress(x, y)
+    _ = intercept
+    _ = r_sq
+    if slope < 0:
+        print("WARNING: negative slope in C_max vs log(L); data quality may be poor")
+    return float(slope), float(stderr)
+
+
+def plot_exponent_summary(df: pd.DataFrame, tc_est: float, outdir: str) -> None:
+    import matplotlib.pyplot as plt
+    from scipy.signal import savgol_filter
+
+    os.makedirs(outdir, exist_ok=True)
+
+    chi_records = []
+    for L, g in df.groupby("L"):
+        mask = (g["T"] >= tc_est - 0.01) & (g["T"] <= tc_est + 0.01)
+        if np.count_nonzero(mask) == 0:
+            continue
+        chi_mean = float(np.mean(g.loc[mask, "chi"].to_numpy()))
+        if chi_mean > 0:
+            chi_records.append((float(L), chi_mean))
+
+    if len(chi_records) < 2:
+        raise ValueError("Insufficient data near Tc to plot chi(L).")
+
+    Ls_chi = np.array([r[0] for r in chi_records], dtype=float)
+    chi_tc = np.array([r[1] for r in chi_records], dtype=float)
+
+    chi_max_records = []
+    for L, g in df.groupby("L"):
+        chi_vals = g.sort_values("T")["chi"].to_numpy()
+        n_points = len(chi_vals)
+        if n_points >= 7:
+            chi_smooth = savgol_filter(chi_vals, window_length=7, polyorder=3)
+        elif n_points >= 5:
+            chi_smooth = savgol_filter(chi_vals, window_length=5, polyorder=3)
+        elif n_points >= 3:
+            chi_smooth = savgol_filter(chi_vals, window_length=3, polyorder=2)
+        else:
+            chi_smooth = chi_vals
+        if chi_smooth.size > 0:
+            chi_max_records.append((float(L), float(np.max(chi_smooth))))
+
+    Ls_chi_max = np.array([r[0] for r in chi_max_records], dtype=float)
+    chi_max = np.array([r[1] for r in chi_max_records], dtype=float)
+
+    c_max_records = []
+    for L, g in df.groupby("L"):
+        c_max_records.append((float(L), float(np.max(g["C"].to_numpy()))))
+    Ls_c = np.array([r[0] for r in c_max_records], dtype=float)
+    C_max = np.array([r[1] for r in c_max_records], dtype=float)
+
+    slope_gamma, intercept_gamma, _, _, _ = stats.linregress(np.log(Ls_chi_max), np.log(chi_max))
+    gamma_fit = np.exp(intercept_gamma) * (Ls_chi_max ** slope_gamma)
+
+    slope_alpha, intercept_alpha, _, _, _ = stats.linregress(np.log(Ls_c), C_max)
+    alpha_fit = slope_alpha * np.log(Ls_c) + intercept_alpha
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+
+    ax = axes[0, 0]
+    ax.loglog(Ls_chi, chi_tc, "o", label="chi(T~Tc)")
+    L_ref = Ls_chi[len(Ls_chi) // 2]
+    chi_ref = chi_tc[len(chi_tc) // 2]
+    chi_ref_line = chi_ref * (Ls_chi / L_ref) ** (7.0 / 4.0)
+    ax.loglog(Ls_chi, chi_ref_line, "--", label="L^(7/4)")
+    ax.set_xlabel("L")
+    ax.set_ylabel("chi")
+    ax.set_title("chi(L) near Tc")
+    ax.legend()
+
+    ax = axes[0, 1]
+    ax.loglog(Ls_chi_max, chi_max, "o", label="chi_max")
+    ax.loglog(Ls_chi_max, gamma_fit, "--", label=f"fit slope={slope_gamma:.3f}")
+    ax.set_xlabel("L")
+    ax.set_ylabel("chi_max")
+    ax.set_title("chi_max(L) scaling")
+    ax.legend()
+
+    ax = axes[1, 0]
+    ax.plot(np.log(Ls_c), C_max, "o", label="C_max")
+    ax.plot(np.log(Ls_c), alpha_fit, "--", label=f"slope={slope_alpha:.3f}")
+    ax.set_xlabel("log(L)")
+    ax.set_ylabel("C_max")
+    ax.set_title("C_max vs log(L)")
+    ax.legend()
+
+    ax = axes[1, 1]
+    ax.axis("off")
+
+    try:
+        beta_val, beta_err = estimate_beta_loglog(df, tc_est)
+    except Exception:
+        beta_val, beta_err = np.nan, np.nan
+
+    try:
+        eta_val, eta_err = estimate_eta(df, tc_est)
+    except Exception:
+        eta_val, eta_err = np.nan, np.nan
+
+    try:
+        gamma_val, gamma_err = estimate_gamma(df)
+    except Exception:
+        gamma_val, gamma_err = np.nan, np.nan
+
+    try:
+        alpha_val, alpha_err = estimate_alpha_logL(df)
+    except Exception:
+        alpha_val, alpha_err = np.nan, np.nan
+
+    rows = [
+        ("beta", beta_val, beta_err, 0.125),
+        ("nu", 1.0, 0.0, 1.0),
+        ("eta", eta_val, eta_err, 0.25),
+        ("gamma", gamma_val, gamma_err, 1.75),
+        ("alpha", alpha_val, alpha_err, 0.0),
+    ]
+
+    table_data = []
+    cell_colors = []
+    for name, val, err, exact in rows:
+        if np.isfinite(err) and err > 0:
+            within = abs(val - exact) <= 2.0 * err
+            dev_sigma = abs(val - exact) / err
+        else:
+            within = np.isfinite(val) and abs(val - exact) < 1e-12
+            dev_sigma = np.nan
+
+        color = "#c6efce" if within else "#f4cccc"
+        table_data.append([f"{val:.4f}", f"{err:.4f}", f"{exact:.4f}", f"{dev_sigma:.2f}"])
+        cell_colors.append([color] * 4)
+
+    table = ax.table(
+        cellText=table_data,
+        rowLabels=[r[0] for r in rows],
+        colLabels=["value", "stderr", "exact", "dev_sigma"],
+        cellColours=cell_colors,
+        loc="center",
+    )
+    table.scale(1, 1.4)
+    ax.set_title("Exponent summary (2-sigma)")
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "fig8_exponent_summary.png"), dpi=200)
+    fig.savefig(os.path.join(outdir, "fig8_exponent_summary.pdf"))
+    plt.close(fig)
+
+
 def bootstrap_beta(df: pd.DataFrame, tc_est: float, n_boot: int = 1000, seed: int = 1234) -> np.ndarray:
-    """Bootstrap estimate of beta uncertainty (FIX D.12: Uses SAME window as estimate_beta_loglog)."""
     large_l_df = df[df["L"] >= 64]
     if len(large_l_df) > 0:
         lmax = int(large_l_df["L"].max())
@@ -492,19 +893,75 @@ def run_analysis(
     try:
         beta, beta_stderr = estimate_beta_loglog(df, tc_inf_val)
     except RuntimeError as e:
-        print(f"⚠ Log-log fit failed: {e}; trying collapse method")
+        print(f" Log-log fit failed: {e}; trying collapse method")
         try:
             beta, beta_stderr = estimate_beta_collapse(df, tc_inf_val)
         except RuntimeError as e2:
-            print(f"⚠ Beta fit completely failed: {e2}")
+            print(f" Beta fit completely failed: {e2}")
             beta, beta_stderr = np.nan, np.nan
     
     beta_boot = bootstrap_beta(df, tc_inf_val)
 
+    try:
+        eta, eta_stderr = estimate_eta(df, tc_inf_val)
+    except Exception as e:
+        print(f" Eta estimation failed: {e}")
+        eta, eta_stderr = np.nan, np.nan
+
+    try:
+        gamma, gamma_stderr = estimate_gamma(df)
+    except Exception as e:
+        print(f" Gamma estimation failed: {e}")
+        gamma, gamma_stderr = np.nan, np.nan
+
+    try:
+        alpha, alpha_stderr = estimate_alpha_logL(df)
+    except Exception as e:
+        print(f" Alpha estimation failed: {e}")
+        alpha, alpha_stderr = np.nan, np.nan
+
+    def deviation_sigma(value: float, exact_value: float, stderr: float) -> float:
+        if not np.isfinite(value) or not np.isfinite(exact_value) or not np.isfinite(stderr) or stderr <= 0.0:
+            return np.nan
+        return abs(value - exact_value) / stderr
+
     metrics = pd.DataFrame(
         [
-            {"name": "Tc_inf", "value": tc_inf, "stderr": tc_inf_stderr},
-            {"name": "beta", "value": beta, "stderr": beta_stderr},
+            {
+                "name": "Tc_inf",
+                "value": tc_inf,
+                "stderr": tc_inf_stderr,
+                "exact_value": 2.269185,
+                "deviation_sigma": deviation_sigma(tc_inf, 2.269185, tc_inf_stderr),
+            },
+            {
+                "name": "beta",
+                "value": beta,
+                "stderr": beta_stderr,
+                "exact_value": 0.125,
+                "deviation_sigma": deviation_sigma(beta, 0.125, beta_stderr),
+            },
+            {
+                "name": "eta",
+                "value": eta,
+                "stderr": eta_stderr,
+                "exact_value": 0.25,
+                "deviation_sigma": deviation_sigma(eta, 0.25, eta_stderr),
+            },
+            {
+                "name": "gamma",
+                "value": gamma,
+                "stderr": gamma_stderr,
+                "exact_value": 1.75,
+                "deviation_sigma": deviation_sigma(gamma, 1.75, gamma_stderr),
+            },
+            {
+                "name": "alpha",
+                "value": alpha,
+                "stderr": alpha_stderr,
+                "exact_value": 0.0,
+                "deviation_sigma": deviation_sigma(alpha, 0.0, alpha_stderr),
+            },
         ]
     )
     metrics.to_csv(metrics_csv, index=False)
@@ -547,11 +1004,11 @@ def main() -> None:
     
     if not np.isnan(est.beta):
         if not (0.05 < est.beta < 0.25):
-            print(f"  ⚠ WARNING: Beta is outside expected range [0.05, 0.25]")
+            print(f"   WARNING: Beta is outside expected range [0.05, 0.25]")
             print(f"    This likely indicates an issue with Tc estimation")
-            print(f"    Expected: β ≈ 0.125 (2D Ising theory)")
+            print(f"    Expected: β = 0.125 (2D Ising theory)")
         elif abs(est.beta - 0.125) > 0.06:
-            print(f"  ⚠ Beta deviates from theory (0.125) by {abs(est.beta - 0.125):.4f}")
+            print(f"   Beta deviates from theory (0.125) by {abs(est.beta - 0.125):.4f}")
             print(f"    Accuracy could be improved; check Tc and data quality")
     
     print("  Tc(L):")
