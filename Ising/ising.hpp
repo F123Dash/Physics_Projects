@@ -6,7 +6,7 @@
 #include <vector>
 
 struct SimulationConfig {
-    std::vector<int> sizes{32, 48, 64, 96, 128, 160, 192, 256};
+    std::vector<int> sizes{32, 48, 64, 96, 128, 160, 192, 256,512,1024};
     double t_min = 1.8;
     double t_max = 3.4;
     double t_step = 0.02;
@@ -41,6 +41,44 @@ struct AveragedObservables {
 };
 
 AveragedObservables finalize(const SampleAccumulator& acc);
+
+struct AutocorrResult {
+    double tau_int = 0.0;
+    double tau_stderr = 0.0;
+    int window = 0;
+    bool converged = false;
+};
+
+AutocorrResult measure_autocorrelation(
+    const std::vector<double>& timeseries,
+    int max_lag = -1
+);
+
+struct RawSample {
+    double m = 0.0;
+    double abs_m = 0.0;
+    double e = 0.0;
+};
+
+struct JackknifeObservables {
+    double chi = 0.0;
+    double chi_err = 0.0;
+    double C = 0.0;
+    double C_err = 0.0;
+    double U = 0.0;
+    double U_err = 0.0;
+    double abs_m = 0.0;
+    double abs_m_err = 0.0;
+    double e = 0.0;
+    double e_err = 0.0;
+    int n_samples = 0;
+};
+
+JackknifeObservables jackknife_observables(
+    const std::vector<RawSample>& samples,
+    int L,
+    double T
+);
 
 std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step, bool adaptive = false);
 
@@ -77,6 +115,13 @@ private:
     long long magnetization_total_ = 0;
     double energy_total_ = 0.0;
 };
+
+int compute_adaptive_stride(
+    Ising2D& model,
+    int calibration_sweeps,
+    int min_stride,
+    int max_stride
+);
 
 SimulationConfig parse_args(int argc, char** argv);
 
