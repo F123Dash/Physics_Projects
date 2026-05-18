@@ -103,7 +103,7 @@ Config parse_args(int argc, char** argv) {
         } else if (starts_with(arg, "--stride=")) {
             cfg.sample_stride = atoi(arg + 9);
         } else if (starts_with(arg, "--seed=")) {
-            cfg.seed = static_cast<uint64_t>(strtoull(arg + 7, nullptr, 10));
+            cfg.seed = strtoull(arg + 7, nullptr, 10);
         } else if (starts_with(arg, "--out=")) {
             cfg.output_csv = arg + 6;
         } else if (starts_with(arg, "--no-adaptive")) {
@@ -270,12 +270,10 @@ int main(int argc, char** argv) {
     for (int L : cfg.sizes) {
         printf("\nL=%d\n", L);
 
-        Ising2DCUDA model(L, cfg.seed + static_cast<uint64_t>(L * 1000));
+        Ising2DCUDA model(L, cfg.seed + L * 1000);
 
         for (double T : temps) {
-            uint64_t run_seed = cfg.seed + static_cast<uint64_t>(L * 1000 + static_cast<int>(T * 1000));
             model.initialize_random();
-            model.reseed(run_seed);
             model.set_temperature(T);
 
             for (int s = 0; s < cfg.thermal_sweeps; ++s) {
