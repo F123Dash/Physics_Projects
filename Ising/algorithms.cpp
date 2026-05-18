@@ -49,7 +49,7 @@ void Ising2D::compute_total_energy_and_magnetization() {
             // Count each bond once: +x and +y neighbors only.
             const int sx = spins_[idx(periodic(x + 1), y)];
             const int sy = spins_[idx(x, periodic(y + 1))];
-            energy_total_ += -static_cast<double>(s * (sx + sy));
+            energy_total_ += -(s * (sx + sy));
         }
     }
 }
@@ -86,7 +86,7 @@ void Ising2D::sweep_metropolis() {
                 if (accept) {
                     spins_[p] = -s;
                     magnetization_total_ += -2 * s;
-                    energy_total_ += static_cast<double>(dE);
+                    energy_total_ += dE;
                 }
             }
         }
@@ -94,11 +94,11 @@ void Ising2D::sweep_metropolis() {
 }
 
 double Ising2D::magnetization_per_spin() const {
-    return static_cast<double>(magnetization_total_) / static_cast<double>(N_);
+    return static_cast<double>(magnetization_total_) / N_;
 }
 
 double Ising2D::energy_per_spin() const {
-    return energy_total_ / static_cast<double>(N_);
+    return energy_total_ / N_;
 }
 
 void Ising2D::sweep_wolff() {
