@@ -79,7 +79,7 @@ SimulationConfig parse_args(int argc, char** argv) {
         } else if (starts_with(arg, "--stride=")) {
             cfg.sample_stride = std::stoi(arg.substr(9));
         } else if (starts_with(arg, "--seed=")) {
-            cfg.seed = static_cast<std::uint64_t>(std::stoull(arg.substr(7)));
+            cfg.seed = std::stoull(arg.substr(7));
         } else if (starts_with(arg, "--out=")) {
             cfg.output_csv = arg.substr(6);
         } else if (starts_with(arg, "--append=")) {
@@ -142,11 +142,6 @@ std::vector<double> make_temperature_grid(double t_min, double t_max, double t_s
     if (!adaptive) {
         return make_uniform_grid(t_min, t_max, t_step);
     }
-
-    // Adaptive grid: finer resolution near critical temperature
-    // Region 1: 1.8 to 2.1, step 0.02
-    // Region 2: 2.1 to 2.4, step 0.005 (critical region)
-    // Region 3: 2.4 to 3.4, step 0.02
     std::vector<double> temps;
 
     // Region 1: coarse
