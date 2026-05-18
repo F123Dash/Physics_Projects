@@ -65,8 +65,8 @@ int main(int argc, char** argv) {
             std::cout << "\nL=" << L << "\n";
             constexpr double stride_ref_L = 32.0;
             constexpr double stride_z = 2.17;
-            double scale = std::pow(static_cast<double>(L) / stride_ref_L, stride_z);
-            int scaled_stride = static_cast<int>(std::lround(cfg.sample_stride * scale));
+            double scale = std::pow(L / stride_ref_L, stride_z);
+            int scaled_stride = std::lround(cfg.sample_stride * scale);
             int stride = std::max(cfg.sample_stride, scaled_stride);
             stride = std::min(stride, cfg.measurement_sweeps);
             if (stride != cfg.sample_stride) {
