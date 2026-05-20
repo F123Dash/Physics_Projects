@@ -60,36 +60,6 @@ __global__ void metropolis_checkerboard_kernel(
     float exp_dE8
 );
 
-__global__ void wolff_initialize_kernel(
-    int8_t* spins,
-    int* visited,
-    int* queue,
-    int* read_pos,
-    int* write_pos,
-    int* queue_capacity,
-    curandState* rng,
-    int N,
-    int* seed_idx
-);
-
-__global__ void wolff_expand_kernel(
-    int8_t* spins,
-    int* visited,
-    int* queue,
-    int* read_pos,
-    int* write_pos,
-    int* queue_capacity,
-    curandState* rng,
-    int L,
-    float wolff_prob
-);
-
-__global__ void wolff_flip_cluster_kernel(
-    int8_t* spins,
-    const int* visited,
-    int N
-);
-
 __global__ void compute_magnetization_kernel(
     const int8_t* spins,
     int* partial_sums,
@@ -109,13 +79,12 @@ public:
     Ising2DCUDA(int L, uint64_t seed);
     ~Ising2DCUDA();
 
-    void initialize_random();
+    void initialize_spins_random();
     void initialize_ordered(int8_t spin_value = 1);
     void reseed(uint64_t seed);
     void set_temperature(double T);
     void sweep_metropolis();
     void sweep_metropolis(cudaStream_t stream);
-    void sweep_wolff();
 
     double magnetization_per_spin();
     double energy_per_spin();
@@ -129,6 +98,8 @@ private:
     // Device memory
     int8_t* d_spins_;
     curandState* d_rng_states_;
+    curandState* d_rng_states_full_;
+    cudaEvent_t rng_ready_event_;
 
     // Precomputed Boltzmann factors
     float exp_dE4_;
@@ -140,16 +111,6 @@ private:
     int* d_result_;
     int num_blocks_;
     int num_blocks_energy_;
-
-    // For Wolff algorithm
-    int* d_visited_;
-    int* d_queue_;
-    int* d_cluster_continue_;
-    int* d_read_pos_;
-    int* d_write_pos_;
-    int* d_queue_capacity_;
-    int* d_seed_idx_;
-    curandState* d_rng_states_full_;
 
     // Cached observables
     int cached_magnetization_;

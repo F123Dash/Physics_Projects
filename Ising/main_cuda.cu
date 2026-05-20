@@ -3,12 +3,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cmath>
 #include <vector>
 #include <string>
 #include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 #include <set>
 
@@ -79,7 +77,6 @@ struct Config {
     bool append_mode = false;
     uint64_t seed = 123456789ULL;
     std::string output_csv = "./data_outputs/data.csv";
-    std::string algorithm = "metropolis";  // "metropolis" or "wolff"
 };
 
 Config parse_args(int argc, char** argv) {
@@ -113,12 +110,6 @@ Config parse_args(int argc, char** argv) {
             cfg.append_mode = true;
         } else if (starts_with(arg, "--append")) {
             cfg.append_mode = true;
-        } else if (starts_with(arg, "--algo=")) {
-            cfg.algorithm = arg + 7;
-            if (cfg.algorithm != "metropolis" && cfg.algorithm != "wolff") {
-                fprintf(stderr, "Error: --algo must be 'metropolis' or 'wolff'\n");
-                exit(1);
-            }
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
             printf("Usage: ./ising2d_cuda [options]\n");
             printf("  --sizes=32,48,64,96,128,160,192,256   Lattice sizes to simulate\n");
@@ -130,7 +121,6 @@ Config parse_args(int argc, char** argv) {
             printf("  --stride=50            Sample every N sweeps\n");
             printf("  --seed=123456789       Random seed\n");
             printf("  --out=./data_outputs/data.csv   Output file\n");
-            printf("  --algo=metropolis      Algorithm: 'metropolis' or 'wolff' (default: metropolis)\n");
             printf("  --no-adaptive          Use uniform temperature grid\n");
             printf("  --append               Append with default sizes (skip existing)\n");
             printf("  --append=512,768       Append only specific sizes\n");
@@ -242,7 +232,7 @@ int main(int argc, char** argv) {
     }
     out << std::fixed << std::setprecision(8);
 
-    printf("2D Ising simulation (CUDA) - Algorithm: %s\n", cfg.algorithm.c_str());
+    printf("2D Ising simulation (CUDA)\n");
     if (cfg.append_mode && file_exists && cfg.sizes.empty()) {
         printf("  Append mode: All requested sizes already present in data file.\n");
         printf("  Nothing to simulate.\n");
@@ -273,26 +263,18 @@ int main(int argc, char** argv) {
         Ising2DCUDA model(L, cfg.seed + L * 1000);
 
         for (double T : temps) {
-            model.initialize_random();
+            model.initialize_spins_random();
             model.set_temperature(T);
 
             for (int s = 0; s < cfg.thermal_sweeps; ++s) {
-                if (cfg.algorithm == "wolff") {
-                    model.sweep_wolff();
-                } else {
-                    model.sweep_metropolis();
-                }
+                model.sweep_metropolis();
             }
 
             SampleAccumulatorCuda acc;
             acc.reset();
 
             for (int s = 0; s < cfg.measurement_sweeps; ++s) {
-                if (cfg.algorithm == "wolff") {
-                    model.sweep_wolff();
-                } else {
-                    model.sweep_metropolis();
-                }
+                model.sweep_metropolis();
                 if ((s + 1) % cfg.sample_stride == 0) {
                     acc.add(model.magnetization_per_spin(), model.energy_per_spin());
                 }

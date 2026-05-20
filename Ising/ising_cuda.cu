@@ -40,9 +40,9 @@ __host__ void SampleAccumulatorCuda::add(double m_per_spin, double e_per_spin) {
     sum_m += m_per_spin;
     sum_abs_m += fabs(m_per_spin);
     sum_e += e_per_spin;
-    sum_m2 += m_per_spin * m_per_spin;
     sum_e2 += e_per_spin * e_per_spin;
     double m2 = m_per_spin * m_per_spin;
+    sum_m2 += m2;
     sum_m4 += m2 * m2;
     ++count;
 }
@@ -62,39 +62,6 @@ AveragedObservablesCuda finalize_cuda(const SampleAccumulatorCuda& acc) {
     out.e2 = acc.sum_e2 * inv;
     out.m4 = acc.sum_m4 * inv;
     return out;
-}
-
-__device__ int get_spin(const uint32_t* spins, int site_idx) {
-    int word_idx = site_idx >> 5;
-    int bit_idx = site_idx & 31;
-    uint32_t word = spins[word_idx];
-    return (word >> bit_idx) & 1u ? 1 : -1;
-}
-
-__device__ void flip_spin(uint32_t* spins, int site_idx) {
-    int word_idx = site_idx >> 5;
-    int bit_idx = site_idx & 31;
-    uint32_t mask = 1u << bit_idx;
-    atomicXor(reinterpret_cast<unsigned int*>(&spins[word_idx]), mask);
-}
-
-__device__ int neighbor_sum_packed(const uint32_t* spins, int x, int y, int L) {
-    int xp = (x + 1 < L) ? x + 1 : 0;
-    int xm = (x > 0) ? x - 1 : L - 1;
-    int yp = (y + 1 < L) ? y + 1 : 0;
-    int ym = (y > 0) ? y - 1 : L - 1;
-    int half_L = L >> 1;
-    int half_N = (L * L) >> 1;
-    int idx_xp = ((xp + y) & 1) * half_N + y * half_L + (xp >> 1);
-    int idx_xm = ((xm + y) & 1) * half_N + y * half_L + (xm >> 1);
-    int idx_yp = ((x + yp) & 1) * half_N + yp * half_L + (x >> 1);
-    int idx_ym = ((x + ym) & 1) * half_N + ym * half_L + (x >> 1);
-    return get_spin(spins, idx_xp) + get_spin(spins, idx_xm)
-         + get_spin(spins, idx_yp) + get_spin(spins, idx_ym);
-}
-
-__device__ int popcount_xor_neighbors(uint32_t word_a, uint32_t word_b) {
-    return __popc(word_a ^ word_b);
 }
 
 __global__ void init_rng_kernel(curandState* states, uint64_t seed, int N) {
@@ -311,112 +278,18 @@ __global__ void reduce_sum_kernel(int* data, int* result, int N) {
     }
 }
 
-__global__ void wolff_initialize_kernel(
-    int8_t* spins,
-    int* visited,
-    int* queue,
-    int* read_pos,
-    int* write_pos,
-    int* queue_capacity,
-    curandState* rng,
-    int N,
-    int* seed_idx
-) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        for (int i = 0; i < N; ++i) {
-            visited[i] = 0;
-        }
-        
-        curandState local_state = rng[0];
-        int idx = (int)(curand_uniform(&local_state) * N);
-        rng[0] = local_state;
-        
-        *seed_idx = idx;
-        visited[idx] = 1;
-        queue[0] = idx;
-        *read_pos = 0;
-        *write_pos = 1;
-        *queue_capacity = N;
-    }
-    __syncthreads();
-}
-
-__global__ void wolff_expand_kernel(
-    int8_t* spins,
-    int* visited,
-    int* queue,
-    int* read_pos,
-    int* write_pos,
-    int* queue_capacity,
-    curandState* rng,
-    int L,
-    float wolff_prob
-) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    int curr_read = *read_pos;
-    int curr_write = *write_pos;
-    int total_in_queue = curr_write - curr_read;
-    
-    if (tid >= total_in_queue || curr_read >= curr_write) {
-        return;
-    }
-    
-    int queue_idx = curr_read + tid;
-    int site_idx = queue[queue_idx];
-    
-    int x = site_idx % L;
-    int y = site_idx / L;
-    int8_t seed_spin = spins[site_idx];
-    
-    int neighbors[4] = {
-        y * L + ((x + 1 < L) ? x + 1 : 0),
-        y * L + ((x > 0) ? x - 1 : L - 1),
-        ((y + 1 < L) ? y + 1 : 0) * L + x,
-        ((y > 0) ? y - 1 : L - 1) * L + x
-    };
-    
-    for (int i = 0; i < 4; ++i) {
-        int neighbor_idx = neighbors[i];
-        
-        if (!visited[neighbor_idx] && spins[neighbor_idx] == seed_spin) {
-            int old_val = atomicCAS(&visited[neighbor_idx], 0, 1);
-            
-            if (old_val == 0) {
-                curandState local_state = rng[threadIdx.x + blockIdx.x * blockDim.x];
-                float r = curand_uniform(&local_state);
-                rng[threadIdx.x + blockIdx.x * blockDim.x] = local_state;
-                
-                if (r < wolff_prob) {
-                    int pos = atomicAdd(write_pos, 1);
-                    if (pos < *queue_capacity) {
-                        queue[pos] = neighbor_idx;
-                    }
-                }
-            }
-        }
-    }
-}
-
-__global__ void wolff_flip_cluster_kernel(
-    int8_t* spins,
-    const int* visited,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N && visited[idx]) {
-        spins[idx] = -spins[idx];
-    }
-}
-
 Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
-    : L_(L), N_(L * L), d_spins_(nullptr), d_rng_states_(nullptr),
-      exp_dE4_(1.0f), exp_dE8_(1.0f),
-      d_partial_mag_(nullptr), d_partial_energy_(nullptr), d_result_(nullptr),
-    d_visited_(nullptr), d_queue_(nullptr), d_read_pos_(nullptr), d_write_pos_(nullptr),
-      d_queue_capacity_(nullptr), d_seed_idx_(nullptr), d_rng_states_full_(nullptr),
-    cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
+        : L_(L), N_(L * L), d_spins_(nullptr), d_rng_states_(nullptr),
+            d_rng_states_full_(nullptr), rng_ready_event_(nullptr),
+            exp_dE4_(1.0f), exp_dE8_(1.0f),
+            d_partial_mag_(nullptr), d_partial_energy_(nullptr), d_result_(nullptr),
+            cached_magnetization_(0), cached_energy_(0), observables_valid_(false)
 {
+    check_cuda_error(
+        cudaEventCreateWithFlags(&rng_ready_event_, cudaEventDisableTiming),
+        "Creating RNG ready event"
+    );
+
     check_cuda_error(
         cudaMalloc(&d_spins_, N_ * sizeof(int8_t)),
         "Allocating spins"
@@ -431,44 +304,17 @@ Ising2DCUDA::Ising2DCUDA(int L, uint64_t seed)
     int num_blocks_rng = (half_N + BLOCK_SIZE - 1) / BLOCK_SIZE;
     init_rng_kernel<<<num_blocks_rng, BLOCK_SIZE>>>(d_rng_states_, seed, half_N);
     check_cuda_last_error("init_rng_kernel");
-    cudaDeviceSynchronize();
 
     check_cuda_error(
         cudaMalloc(&d_rng_states_full_, N_ * sizeof(curandState)),
-        "Allocating full RNG states for Wolff"
+        "Allocating full RNG states"
     );
     int num_blocks_full_rng = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
     init_rng_kernel<<<num_blocks_full_rng, BLOCK_SIZE>>>(d_rng_states_full_, seed + 1, N_);
-    check_cuda_last_error("init_rng_kernel for full states");
-    cudaDeviceSynchronize();
-
+    check_cuda_last_error("init_rng_kernel full states");
     check_cuda_error(
-        cudaMalloc(&d_visited_, N_ * sizeof(int)),
-        "Allocating visited array"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_queue_, N_ * sizeof(int)),
-        "Allocating queue"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_cluster_continue_, sizeof(int)),
-        "Allocating cluster_continue flag"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_read_pos_, sizeof(int)),
-        "Allocating queue read position"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_write_pos_, sizeof(int)),
-        "Allocating queue write position"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_queue_capacity_, sizeof(int)),
-        "Allocating queue capacity"
-    );
-    check_cuda_error(
-        cudaMalloc(&d_seed_idx_, sizeof(int)),
-        "Allocating seed index"
+        cudaEventRecord(rng_ready_event_, 0),
+        "Recording RNG ready event"
     );
 
     num_blocks_ = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -496,32 +342,13 @@ Ising2DCUDA::~Ising2DCUDA() {
     if (d_partial_mag_) cudaFree(d_partial_mag_);
     if (d_partial_energy_) cudaFree(d_partial_energy_);
     if (d_result_) cudaFree(d_result_);
-    if (d_visited_) cudaFree(d_visited_);
-    if (d_queue_) cudaFree(d_queue_);
-    if (d_cluster_continue_) cudaFree(d_cluster_continue_);
-    if (d_read_pos_) cudaFree(d_read_pos_);
-    if (d_write_pos_) cudaFree(d_write_pos_);
-    if (d_queue_capacity_) cudaFree(d_queue_capacity_);
-    if (d_seed_idx_) cudaFree(d_seed_idx_);
+    if (rng_ready_event_) cudaEventDestroy(rng_ready_event_);
 }
 
-void Ising2DCUDA::initialize_random() {
+void Ising2DCUDA::initialize_spins_random() {
     int num_blocks = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
-
-    curandState* d_full_rng;
-    check_cuda_error(
-        cudaMalloc(&d_full_rng, N_ * sizeof(curandState)),
-        "Allocating full RNG for init"
-    );
-
-    init_rng_kernel<<<num_blocks, BLOCK_SIZE>>>(d_full_rng, 42ULL, N_);
-    check_cuda_last_error("init full rng");
-
-    init_spins_random_kernel<<<num_blocks, BLOCK_SIZE>>>(d_spins_, d_full_rng, N_);
+    init_spins_random_kernel<<<num_blocks, BLOCK_SIZE>>>(d_spins_, d_rng_states_full_, N_);
     check_cuda_last_error("init_spins_random_kernel");
-    cudaDeviceSynchronize();
-
-    cudaFree(d_full_rng);
     observables_valid_ = false;
 }
 
@@ -530,7 +357,6 @@ void Ising2DCUDA::initialize_ordered(int8_t spin_value) {
     int8_t val = (spin_value >= 0) ? 1 : -1;
     init_spins_ordered_kernel<<<num_blocks, BLOCK_SIZE>>>(d_spins_, val, N_);
     check_cuda_last_error("init_spins_ordered_kernel");
-    cudaDeviceSynchronize();
     observables_valid_ = false;
 }
 
@@ -543,8 +369,10 @@ void Ising2DCUDA::reseed(uint64_t seed) {
     int num_blocks_full_rng = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
     init_rng_kernel<<<num_blocks_full_rng, BLOCK_SIZE>>>(d_rng_states_full_, seed + 1, N_);
     check_cuda_last_error("init_rng_kernel full reseed");
-
-    cudaDeviceSynchronize();
+    check_cuda_error(
+        cudaEventRecord(rng_ready_event_, 0),
+        "Recording RNG ready event"
+    );
 }
 
 void Ising2DCUDA::set_temperature(double T) {
@@ -558,6 +386,10 @@ void Ising2DCUDA::sweep_metropolis() {
 }
 
 void Ising2DCUDA::sweep_metropolis(cudaStream_t stream) {
+    check_cuda_error(
+        cudaStreamWaitEvent(stream, rng_ready_event_, 0),
+        "Waiting for RNG init event"
+    );
     int color0_count = (N_ + 1) / 2;
     int color1_count = N_ / 2;
     int num_blocks_color0 = (color0_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -573,65 +405,6 @@ void Ising2DCUDA::sweep_metropolis(cudaStream_t stream) {
 
     observables_valid_ = false;
 }
-
-void Ising2DCUDA::sweep_wolff(){
-    int num_blocks = (N_ + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    
-    // Wolff probability: P = 1 - exp(-2*beta)
-    float wolff_prob = 1.0f - sqrtf(exp_dE4_);
-    
-    check_cuda_error(
-        cudaMemset(d_cluster_continue_, 0, sizeof(int)),
-        "Resetting d_cluster_continue"
-    );
-    check_cuda_error(
-        cudaMemset(d_read_pos_, 0, sizeof(int)),
-        "Resetting d_read_pos"
-    );
-    check_cuda_error(
-        cudaMemset(d_write_pos_, 1, sizeof(int)),
-        "Resetting d_write_pos to 1"
-    );
-    
-    int num_blocks_init = 1;
-    wolff_initialize_kernel<<<num_blocks_init, BLOCK_SIZE>>>(
-        d_spins_, d_visited_, d_queue_, d_read_pos_, d_write_pos_, d_queue_capacity_,
-        d_rng_states_full_, N_, d_seed_idx_
-    );
-    check_cuda_last_error("wolff_initialize_kernel");
-    
-    int max_iterations = N_;
-    int iteration = 0;
-    
-    while (iteration < max_iterations) {
-        int h_read_pos = 0;
-        int h_write_pos = 0;
-        cudaMemcpy(&h_read_pos, d_read_pos_, sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&h_write_pos, d_write_pos_, sizeof(int), cudaMemcpyDeviceToHost);
-
-        int frontier_size = h_write_pos - h_read_pos;
-        if (frontier_size <= 0) break;
-        
-        int frontier_blocks = (frontier_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        wolff_expand_kernel<<<frontier_blocks, BLOCK_SIZE>>>(
-            d_spins_, d_visited_, d_queue_, d_read_pos_, d_write_pos_,
-            d_queue_capacity_, d_rng_states_full_, L_, wolff_prob
-        );
-        check_cuda_last_error("wolff_expand_kernel");
-
-        cudaMemcpy(d_read_pos_, &h_write_pos, sizeof(int), cudaMemcpyHostToDevice);
-        iteration++;
-    }
-    
-    wolff_flip_cluster_kernel<<<num_blocks, BLOCK_SIZE>>>(
-        d_spins_, d_visited_, N_
-    );
-    check_cuda_last_error("wolff_flip_cluster_kernel");
-    
-    cudaDeviceSynchronize();
-    observables_valid_ = false;
-}
-
 
 void Ising2DCUDA::compute_observables() {
     if (observables_valid_) return;
@@ -666,8 +439,6 @@ void Ising2DCUDA::compute_observables() {
     );
 
     cudaMemcpy(&cached_energy_, d_result_, sizeof(int), cudaMemcpyDeviceToHost);
-
-    cudaDeviceSynchronize();
     observables_valid_ = true;
 }
 
