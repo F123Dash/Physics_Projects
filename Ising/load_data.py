@@ -1,9 +1,32 @@
+import io
+
 import numpy as np
 import pandas as pd
 
 
 def load_ising_csv(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    with open(path, "r", encoding="utf-8") as handle:
+        header = handle.readline()
+        if not header:
+            raise ValueError(f"Empty CSV: {path}")
+        header_cols = header.strip().split(",")
+        n_cols = len(header_cols)
+        if n_cols == 0:
+            raise ValueError(f"Malformed CSV header: {path}")
+
+        cleaned_lines = [header.strip()]
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            cols = stripped.split(",")
+            if len(cols) > n_cols:
+                cols = cols[:n_cols]
+            elif len(cols) < n_cols:
+                cols.extend([""] * (n_cols - len(cols)))
+            cleaned_lines.append(",".join(cols))
+
+    df = pd.read_csv(io.StringIO("\n".join(cleaned_lines)))
 
     required = {"T", "L", "M", "absM", "E", "M2", "E2"}
     missing = required - set(df.columns)
