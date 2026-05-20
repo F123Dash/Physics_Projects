@@ -7,16 +7,16 @@ CUDA_FLAGS = $(CUDA_ARCH) $(CUDA_OPT) -Xcompiler -Wall
 CUDA_SOURCES = main_cuda.cu ising_cuda.cu
 CUDA_HEADERS = ising_cuda.cuh
 
-TARGET_CUDA = cuda
+TARGET_CUDA = ising2d_cuda
 
 CXX = g++
 CXX_FLAGS = -O3 -Wall -std=c++17
 CPU_SOURCES = main.cpp ising.cpp algorithms.cpp observables.cpp
 CPU_HEADERS = ising.hpp
-TARGET_CPU = cpu
+TARGET_CPU = ising2d_cpu
 
 WOLFF_SOURCES = wolff.cpp ising.cpp algorithms.cpp observables.cpp
-TARGET_WOLFF = wolff
+TARGET_WOLFF = ising2d_wolff
 
 .PHONY: all clean cuda cpu wolff
 
