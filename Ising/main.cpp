@@ -56,28 +56,28 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "step " << cfg.t_step << "\n";
         }
-        std::cout << "  sweeps: therm=" << cfg.thermal_sweeps
-              << ", meas=" << cfg.measurement_sweeps
-              << ", stride(base)=" << cfg.sample_stride
-              << " (auto-scale ~ (L/32)^2.17)\n";
+          std::cout << "  sweeps: therm(base)=" << cfg.thermal_sweeps
+              << " (scaled by (L/32)^2.17), meas=" << cfg.measurement_sweeps
+              << ", stride=" << cfg.sample_stride << " (fixed)\n";
 
         for (int L : cfg.sizes) {
             std::cout << "\nL=" << L << "\n";
-            constexpr double stride_ref_L = 32.0;
-            constexpr double stride_z = 2.17;
-            double scale = std::pow(L / stride_ref_L, stride_z);
-            int scaled_stride = std::lround(cfg.sample_stride * scale);
-            int stride = std::max(cfg.sample_stride, scaled_stride);
-            stride = std::min(stride, cfg.measurement_sweeps);
-            if (stride != cfg.sample_stride) {
-                std::cout << "  stride(L)=" << stride << " (scaled from " << cfg.sample_stride << ")\n";
+            constexpr double scale_ref_L = 32.0;
+            constexpr double scale_z = 2.17;
+            double therm_scale = std::pow(L / scale_ref_L, scale_z);
+            int therm_sweeps = std::lround(cfg.thermal_sweeps * therm_scale);
+            therm_sweeps = std::max(cfg.thermal_sweeps, therm_sweeps);
+            int stride = std::min(cfg.sample_stride, cfg.measurement_sweeps);
+            if (therm_sweeps != cfg.thermal_sweeps) {
+                std::cout << "  therm(L)=" << therm_sweeps << " (scaled from "
+                          << cfg.thermal_sweeps << ")\n";
             }
             for (double T : temps) {
                 Ising2D model(L, rng);
                 model.initialize_random();
                 model.set_temperature(T);
 
-                for (int s = 0; s < cfg.thermal_sweeps; ++s) {
+                for (int s = 0; s < therm_sweeps; ++s) {
                     model.sweep_metropolis();
                 }
 

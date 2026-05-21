@@ -7,7 +7,7 @@ import pandas as pd
 from scipy import stats
 from scipy.signal import savgol_filter
 
-from analysis import estimate_tc_finite_size
+from analysis import EXACT_TC, estimate_tc_finite_size
 from load_data import load_ising_csv
 
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -69,7 +69,7 @@ def plot_chi_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
                 label=rf"$L={int(L)}$", alpha=0.85)
     plt.axvline(tc_inf, color='red', linestyle='--', alpha=0.5, lw=1.5, label=rf"$T_c={tc_inf:.4f}$")
     plt.xlabel(r"Temperature $T$ (J/$k_B$)", fontsize=11)
-    plt.ylabel(r"Susceptibility $\chi = N(⟨M^2⟩ - ⟨M⟩^2)/T$", fontsize=11)
+    plt.ylabel(r"Susceptibility $\chi = N(⟨M^2⟩ - ⟨|M|⟩^2)/T$", fontsize=11)
     plt.title("Susceptibility vs Temperature (Savitzky-Golay smoothed)")
     plt.grid(True, alpha=0.3, which='both')
     plt.legend(fontsize=10, loc='best')
@@ -133,7 +133,7 @@ def plot_tc_extrapolation(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: fl
     savefig(os.path.join(outdir, "fig4_tc_extrapolation.png"))
 
 
-def plot_beta_loglog(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
+def plot_beta_loglog(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_beta: float, outdir: str) -> None:
     large_l_df = df[df["L"] >= 64]
     if len(large_l_df) > 0:
         lmax = int(large_l_df["L"].max())
@@ -142,7 +142,7 @@ def plot_beta_loglog(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float, 
     
     g = df[df["L"] == lmax].sort_values("T")
 
-    dt = tc_inf - g["T"].to_numpy()
+    dt = tc_beta - g["T"].to_numpy()
     m = g["absM"].to_numpy()
     
     mask = (dt > 0.02) & (dt < 0.07) & (m > 1e-8)
@@ -259,11 +259,10 @@ def main() -> None:
     plot_binder_vs_t(df, tc_inf, args.outdir)
     plot_c_vs_t(df, tc_inf, args.outdir)
     plot_tc_extrapolation(df, metrics_df, tc_inf, args.outdir)
-    plot_beta_loglog(df, metrics_df, tc_inf, args.outdir)
+    plot_beta_loglog(df, metrics_df, EXACT_TC, args.outdir)
     plot_data_collapse(df, metrics_df, tc_inf, args.outdir)
     plot_beta_bootstrap_hist(args.beta_csv, metrics_df, args.outdir)
 
-    print(f"\n✓ Saved plots to {args.outdir}/")
-    print(f"  Formats: PNG (raster @ 200dpi) + PDF (vector)")
+    print(f"\n Saved plots to {args.outdir}/")
 if __name__ == "__main__":
     main()

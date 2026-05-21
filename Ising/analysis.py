@@ -11,6 +11,8 @@ from scipy.special import logsumexp
 
 from load_data import load_ising_csv
 
+EXACT_TC = 2.269185
+
 
 @dataclass
 class CriticalEstimates:
@@ -333,10 +335,17 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         
         chi_vals = g["chi"].to_numpy()
         n_points = len(chi_vals)
-        window_length = min(7, n_points // 2 * 2 + 1) if n_points >= 3 else n_points
+        if n_points < 3:
+            print(f"  WARNING: L={int(L)} has only {n_points} temperature points; skipping Tc peak.")
+            continue
+
+        window_length = min(7, n_points if n_points % 2 == 1 else n_points - 1)
         window_length = max(3, window_length)
         chi_smooth = savgol_filter(chi_vals, window_length=window_length, polyorder=2)
         i = int(np.argmax(chi_smooth))
+        if i == 0 or i == n_points - 1:
+            print(f"  WARNING: L={int(L)} chi peak at boundary (T={g.iloc[i]['T']:.3f}); skipping Tc peak.")
+            continue
         tc_by_L[int(L)] = float(g.iloc[i]["T"])
     
     print(f"DEBUG Tc(L):", tc_by_L)
@@ -379,6 +388,9 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         Ls_large = Ls_large[mask]
         tcL = tcL[mask]
     
+    if len(Ls_large) == 0:
+        raise RuntimeError("No valid Tc(L) points after filtering; check data or thermalization.")
+
     x = 1.0 / Ls_large
 
     weights = Ls_large**2  # larger systems dominate
@@ -413,6 +425,7 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         tc_inf = float(np.mean(tcL))
         stderr = 0.0
         slope = 0.0
+        intercept = tc_inf
         r_sq = 0.0
     
     tc_inf_stderr = float(stderr)
@@ -423,7 +436,10 @@ def estimate_tc_finite_size(df: pd.DataFrame) -> Tuple[Dict[int, float], float, 
         tc_inf_stderr = float(np.std(tcL)) if len(tcL) > 1 else 0.0
     
     print(f" Using χ-peak extrapolation (largest systems only, weighted): Tc(∞) = {tc_inf:.6f} ± {tc_inf_stderr:.6f}")
-    print(f"  Finite-size relation: Tc(L) = {intercept:.6f} + {slope:.6f}/L (R² = {r_sq:.4f})")
+    if len(Ls_large) >= 2:
+        print(f"  Finite-size relation: Tc(L) = {intercept:.6f} + {slope:.6f}/L (R² = {r_sq:.4f})")
+    else:
+        print("  Finite-size relation: insufficient points for fit; using mean Tc")
     print(f"  Systems used: L = {[int(L) for L in Ls_large]}")
     if len(Ls_large) <= 2:
         print("   Using only 2 lattice sizes  Tc uncertainty is underestimated")
@@ -573,7 +589,7 @@ def estimate_beta_loglog(df: pd.DataFrame, tc_est: float) -> Tuple[float, float]
     _ = intercept
     
     if slope < 0.07 or slope > 0.18:
-        print(f"   WARNING: Beta={slope:.4f} outside typical range [0.07, 0.18] (likely due to Tc uncertainty)")
+        print(f"   WARNING: Beta={slope:.4f} outside typical range [0.07, 0.18] (data quality or thermalization issues)")
     
     print(f"  Fit: log(M) = {slope:.4f} * log(deltaT) (R²={r_sq:.4f})")
     
@@ -888,19 +904,20 @@ def run_analysis(
     os.makedirs(bootstrap_dir, exist_ok=True)
 
     tc_by_L, tc_inf, tc_inf_stderr, tc_inf_val = estimate_tc_finite_size(df)
+    beta_tc = EXACT_TC
     
-    print("Beta estimation: Using log-log scaling (largest L)...")
+    print(f"Beta estimation: Using log-log scaling with fixed Tc={beta_tc:.6f} (largest L)...")
     try:
-        beta, beta_stderr = estimate_beta_loglog(df, tc_inf_val)
+        beta, beta_stderr = estimate_beta_loglog(df, beta_tc)
     except RuntimeError as e:
         print(f" Log-log fit failed: {e}; trying collapse method")
         try:
-            beta, beta_stderr = estimate_beta_collapse(df, tc_inf_val)
+            beta, beta_stderr = estimate_beta_collapse(df, beta_tc)
         except RuntimeError as e2:
             print(f" Beta fit completely failed: {e2}")
             beta, beta_stderr = np.nan, np.nan
     
-    beta_boot = bootstrap_beta(df, tc_inf_val)
+    beta_boot = bootstrap_beta(df, beta_tc)
 
     try:
         eta, eta_stderr = estimate_eta(df, tc_inf_val)

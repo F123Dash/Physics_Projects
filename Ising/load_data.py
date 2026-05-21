@@ -34,10 +34,11 @@ def load_ising_csv(path: str) -> pd.DataFrame:
         raise ValueError(f"Missing columns: {sorted(missing)}")
 
     df = df.copy()
-    # Susceptibility uses signed magnetization moments
-    # χ = N(⟨M²⟩ − ⟨M⟩²) / T where N = L²
+    # Susceptibility based on |M| to suppress domain-flip artifacts
+    # χ = N(⟨M²⟩ − ⟨|M|⟩²) / T where N = L²
     N = df["L"] ** 2
-    df["chi"] = N * (df["M2"] - df["M"] ** 2) / df["T"]
+    df["chi_signed"] = N * (df["M2"] - df["M"] ** 2) / df["T"]
+    df["chi"] = N * (df["M2"] - df["absM"] ** 2) / df["T"]
     df["C"] = (df["E2"] - df["E"] ** 2) / (df["T"] ** 2)
     
     if "M4" in df.columns:

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <vector>
 #include <string>
 #include <fstream>
@@ -253,12 +254,27 @@ int main(int argc, char** argv) {
     } else {
         printf("step %.3f\n", cfg.t_step);
     }
-    printf("  sweeps: therm=%d, meas=%d, stride=%d\n",
-           cfg.thermal_sweeps, cfg.measurement_sweeps, cfg.sample_stride);
+        printf("  sweeps: therm(base)=%d (scaled by (L/32)^2.17), meas=%d, stride=%d (fixed)\n",
+            cfg.thermal_sweeps, cfg.measurement_sweeps, cfg.sample_stride);
     printf("  seed: %lu\n", cfg.seed);
 
     for (int L : cfg.sizes) {
         printf("\nL=%d\n", L);
+
+        const double scale_ref_L = 32.0;
+        const double scale_z = 2.17;
+        double therm_scale = std::pow(static_cast<double>(L) / scale_ref_L, scale_z);
+        int therm_sweeps = static_cast<int>(std::lround(cfg.thermal_sweeps * therm_scale));
+        if (therm_sweeps < cfg.thermal_sweeps) {
+            therm_sweeps = cfg.thermal_sweeps;
+        }
+        int stride = cfg.sample_stride;
+        if (stride > cfg.measurement_sweeps) {
+            stride = cfg.measurement_sweeps;
+        }
+        if (therm_sweeps != cfg.thermal_sweeps) {
+            printf("  therm(L)=%d (scaled from %d)\n", therm_sweeps, cfg.thermal_sweeps);
+        }
 
         Ising2DCUDA model(L, cfg.seed + L * 1000);
 
@@ -266,7 +282,7 @@ int main(int argc, char** argv) {
             model.initialize_spins_random();
             model.set_temperature(T);
 
-            for (int s = 0; s < cfg.thermal_sweeps; ++s) {
+            for (int s = 0; s < therm_sweeps; ++s) {
                 model.sweep_metropolis();
             }
 
@@ -275,7 +291,7 @@ int main(int argc, char** argv) {
 
             for (int s = 0; s < cfg.measurement_sweeps; ++s) {
                 model.sweep_metropolis();
-                if ((s + 1) % cfg.sample_stride == 0) {
+                if ((s + 1) % stride == 0) {
                     acc.add(model.magnetization_per_spin(), model.energy_per_spin());
                 }
             }

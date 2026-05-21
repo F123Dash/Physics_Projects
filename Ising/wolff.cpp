@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
 
     outfile.seekp(0, std::ios::end);
     if (outfile.tellp() == 0) {
-        outfile << "T,L,M,absM,E,M2,E2,M4,U4\n";
+        outfile << "T,L,M,absM,E,M2,E2,M4\n";
     }
 
     for (int L : cfg.sizes) {
@@ -47,7 +47,11 @@ int main(int argc, char** argv) {
 
         for (double T : temps) {
             Ising2D ising(L, rng);
-            ising.initialize_random();
+            if (T < 2.5) {
+                ising.initialize_ordered(1);
+            } else {
+                ising.initialize_random();
+            }
             ising.set_temperature(T);
 
             for (int sweep = 0; sweep < cfg.thermal_sweeps; ++sweep) {
@@ -66,12 +70,6 @@ int main(int argc, char** argv) {
             }
 
             AveragedObservables obs = finalize(acc);
-            
-            // Calculate Binder cumulant U4 = 1 - <M^4> / (3 * <M^2>^2)
-            double u4 = 1.0;
-            if (obs.m2 > 1e-12) {
-                u4 = 1.0 - obs.m4 / (3.0 * obs.m2 * obs.m2);
-            }
 
             outfile << std::fixed << std::setprecision(6)
                     << T << ","
@@ -81,8 +79,7 @@ int main(int argc, char** argv) {
                     << obs.e << ","
                     << obs.m2 << ","
                     << obs.e2 << ","
-                    << obs.m4 << ","
-                    << u4 << "\n";
+                    << obs.m4 << "\n";
 
             std::cerr << "  T = " << std::fixed << std::setprecision(3) << T
                       << ": |M| = " << std::setprecision(4) << obs.abs_m
