@@ -1,0 +1,942 @@
+ python solver/ns_solver.py 
+Config: Re=100, N=64x64, nu=0.01000, t_end=40.0, save after t=12.0
+Starting simulation: Re=100, grid=64x64
+Running to t=40.0, saving every 10 steps
+Saving snapshots only after t=12.00
+Done. Saved 62 snapshots to /home/kevin/Physics_Projects/Turbulence-cnn/snapshots/Re_100/
+Config: Re=100, N=64x64, nu=0.01000, t_end=40.0, save after t=12.0
+Saved centerline profiles: /home/kevin/Physics_Projects/Turbulence-cnn/img_out/centerline_Re100.png
+Config: Re=400, N=64x64, nu=0.00250, t_end=50.0, save after t=15.0
+Starting simulation: Re=400, grid=64x64
+Running to t=50.0, saving every 10 steps
+Saving snapshots only after t=15.00
+Done. Saved 391 snapshots to /home/kevin/Physics_Projects/Turbulence-cnn/snapshots/Re_400/
+Config: Re=400, N=64x64, nu=0.00250, t_end=50.0, save after t=15.0
+Saved centerline profiles: /home/kevin/Physics_Projects/Turbulence-cnn/img_out/centerline_Re400.png
+Config: Re=1000, N=64x64, nu=0.00100, t_end=125.0, save after t=37.5
+Starting simulation: Re=1000, grid=64x64
+Running to t=125.0, saving every 10 steps
+Saving snapshots only after t=37.50
+Done. Saved 523 snapshots to /home/kevin/Physics_Projects/Turbulence-cnn/snapshots/Re_1000/
+Config: Re=1000, N=64x64, nu=0.00100, t_end=125.0, save after t=37.5
+Saved centerline profiles: /home/kevin/Physics_Projects/Turbulence-cnn/img_out/centerline_Re1000.png
+Config: Re=1000, N=64x64, nu=0.00100, t_end=125.0, save after t=37.5
+Saved energy spectrum: /home/kevin/Physics_Projects/Turbulence-cnn/img_out/spectrum_Re1000.png
+Snapshot data saved in: /home/kevin/Physics_Projects/Turbulence-cnn/snapshots/Re_*/
+Images saved in: /home/kevin/Physics_Projects/Turbulence-cnn/img_out/
+> python data/dataset.py 
+Building turbulence dataset from: /home/kevin/Physics_Projects/Turbulence-cnn/snapshots
+  Loaded   62 snapshots from Re=100
+  Loaded  523 snapshots from Re=1000
+  Loaded  391 snapshots from Re=400
+Total snapshots loaded: 976
+Normalisation statistics (per channel [u, v, p]):
+  mean = [1.3826347e-02 3.8086739e-03 9.9597127e-12]
+  std  = [0.19346277 0.11769302 0.03874063]
+  saved to /home/kevin/Physics_Projects/Turbulence-cnn/train-data/stats.npy
+Split: train=782  val=146  test=48
+Dataset ready: 782 samples, augment=True, noise_std=0.05
+Dataset ready: 146 samples, augment=False, noise_std=0.0
+Dataset ready: 48 samples, augment=False, noise_std=0.0
+Dataloaders ready:
+  train: 48 batches × batch_size=16
+  val:   10 batches
+  test:  3 batches
+Dataset summary
+  Train batches : 48
+  Val batches   : 10
+  Test batches  : 3
+  Batch shapes:
+    coarse : (16, 3, 64, 64)  (U-Net input)
+    fine   : (16, 3, 64, 64)   (U-Net target)
+    label  : (16,)  (classifier target)
+  Normalisation:
+    mean [u,v,p] = [0.0138 0.0038 0.    ]
+    std  [u,v,p] = [0.1935 0.1177 0.0387]
+  coarse value range: [-4.049, 11.802]
+  fine   value range: [-5.097,   16.920]
+> python models/unet.py 
+  Total trainable parameters: 9,295,624
+  Forward pass shape trace (batch_size=1):
+  Layer                        Output shape
+  Input                        (1, 3, 64, 64)
+  Encoder 1 (skip)             (1, 64, 64, 64)
+  Encoder 1 (pooled)           (1, 64, 32, 32)
+  Encoder 2 (skip)             (1, 128, 32, 32)
+  Encoder 2 (pooled)           (1, 128, 16, 16)
+  Encoder 3 (skip)             (1, 256, 16, 16)
+  Encoder 3 (pooled)           (1, 256, 8, 8)
+  Bottleneck                   (1, 512, 8, 8)
+  Classifier logits            (1, 5)
+  Decoder 3                    (1, 256, 16, 16)
+  Decoder 2                    (1, 128, 32, 32)
+  Decoder 1                    (1, 64, 64, 64)
+  Output (fine field)          (1, 3, 64, 64)
+Pred field shape  : (4, 3, 64, 64)
+Pred logits shape : (4, 5)
+
+Loss components:
+  L_total : 8005.3438
+  L_recon : 51.3257
+  L_div   : 79540.0000
+  L_cls   : 1.7830
+
+Backward pass: OK
+Parameters with gradients: 54
+Max gradient norm: 19253.8301
+Min gradient norm: 0.003313
+> python train/train.py --lambda_div 0.001 --epochs 80 --out_dir runs/exp_02
+
+Device: cuda
+Output dir: runs/exp_02
+Building turbulence dataset from: snapshots
+  Loaded   62 snapshots from Re=100
+  Loaded  523 snapshots from Re=1000
+  Loaded  391 snapshots from Re=400
+
+Total snapshots loaded: 976
+
+Normalisation statistics (per channel [u, v, p]):
+  mean = [1.3826347e-02 3.8086739e-03 9.9597127e-12]
+  std  = [0.19346277 0.11769302 0.03874063]
+  saved to stats.npy
+
+Split: train=782  val=146  test=48
+Dataset ready: 782 samples, augment=True, noise_std=0.05
+Dataset ready: 146 samples, augment=False, noise_std=0.0
+Dataset ready: 48 samples, augment=False, noise_std=0.0
+
+Dataloaders ready:
+  train: 48 batches × batch_size=16
+  val:   10 batches
+  test:  3 batches
+
+Model parameters: 9,295,624
+Training for 80 epochs
+  lr: 0.001 → 1e-05 (cosine)
+  lambda_div=0.001  lambda_cls=0.01
+  grad_clip=1.0
+  Epoch   1  batch   20/48  loss=0.3288  recon=0.2780  div=46.4652  acc=100.0%
+  Epoch   1  batch   40/48  loss=0.2304  recon=0.1980  div=28.8603  acc=81.2%
+  Epoch   1  batch   48/48  loss=0.1348  recon=0.1159  div=17.2336  acc=100.0%
+
+Epoch   1/80  [4.6s]
+  Train  loss=5.0346  recon=3.5467  div=10.4648  acc=80.3%
+  Val    loss=0.2396  recon=0.2140  div=2.2425  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   2  batch   20/48  loss=0.0877  recon=0.0756  div=11.5071  acc=100.0%
+  Epoch   2  batch   40/48  loss=0.0797  recon=0.0673  div=11.8770  acc=100.0%
+  Epoch   2  batch   48/48  loss=0.0669  recon=0.0564  div=10.2775  acc=100.0%
+
+Epoch   2/80  [4.2s]
+  Train  loss=0.1150  recon=0.0985  div=2.1367  acc=92.4%
+  Val    loss=0.0831  recon=0.0714  div=1.7429  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   3  batch   20/48  loss=0.0641  recon=0.0533  div=10.5112  acc=100.0%
+  Epoch   3  batch   40/48  loss=0.0461  recon=0.0353  div=10.6640  acc=100.0%
+  Epoch   3  batch   48/48  loss=0.0526  recon=0.0439  div=8.5488  acc=100.0%
+
+Epoch   3/80  [4.2s]
+  Train  loss=0.0690  recon=0.0576  div=1.8245  acc=96.9%
+  Val    loss=0.0402  recon=0.0345  div=1.4725  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   4  batch   20/48  loss=0.0315  recon=0.0233  div=8.0678  acc=100.0%
+  Epoch   4  batch   40/48  loss=0.0756  recon=0.0663  div=7.5338  acc=100.0%
+  Epoch   4  batch   48/48  loss=0.0441  recon=0.0363  div=7.7393  acc=100.0%
+
+Epoch   4/80  [4.2s]
+  Train  loss=0.0609  recon=0.0517  div=1.6836  acc=97.1%
+  Val    loss=0.0526  recon=0.0445  div=1.4910  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   5  batch   20/48  loss=0.0424  recon=0.0359  div=6.5090  acc=100.0%
+  Epoch   5  batch   40/48  loss=0.0492  recon=0.0427  div=6.5095  acc=100.0%
+  Epoch   5  batch   48/48  loss=0.0680  recon=0.0520  div=9.1444  acc=62.5%
+
+Epoch   5/80  [4.2s]
+  Train  loss=0.0542  recon=0.0455  div=1.5930  acc=98.7%
+  Val    loss=0.0710  recon=0.0655  div=1.3791  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   6  batch   20/48  loss=0.0304  recon=0.0231  div=5.9428  acc=100.0%
+  Epoch   6  batch   40/48  loss=0.0288  recon=0.0225  div=6.3114  acc=100.0%
+  Epoch   6  batch   48/48  loss=0.0415  recon=0.0357  div=4.9991  acc=100.0%
+
+Epoch   6/80  [4.2s]
+  Train  loss=0.0432  recon=0.0356  div=1.4930  acc=96.4%
+  Val    loss=0.0331  recon=0.0285  div=1.2190  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   7  batch   20/48  loss=0.0310  recon=0.0256  div=5.2267  acc=100.0%
+  Epoch   7  batch   40/48  loss=0.0373  recon=0.0324  div=4.8629  acc=100.0%
+  Epoch   7  batch   48/48  loss=0.0207  recon=0.0154  div=5.2404  acc=100.0%
+
+Epoch   7/80  [4.2s]
+  Train  loss=0.0368  recon=0.0309  div=1.3891  acc=99.1%
+  Val    loss=0.0267  recon=0.0205  div=1.2186  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   8  batch   20/48  loss=0.0244  recon=0.0183  div=6.0501  acc=100.0%
+  Epoch   8  batch   40/48  loss=0.0167  recon=0.0129  div=3.8010  acc=100.0%
+  Epoch   8  batch   48/48  loss=0.0240  recon=0.0200  div=3.9264  acc=100.0%
+
+Epoch   8/80  [4.2s]
+  Train  loss=0.0309  recon=0.0259  div=1.3436  acc=99.3%
+  Val    loss=0.0244  recon=0.0210  div=1.1504  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch   9  batch   20/48  loss=0.0271  recon=0.0229  div=4.0995  acc=100.0%
+  Epoch   9  batch   40/48  loss=0.0357  recon=0.0318  div=3.9025  acc=100.0%
+  Epoch   9  batch   48/48  loss=0.0275  recon=0.0241  div=3.4159  acc=100.0%
+
+Epoch   9/80  [4.2s]
+  Train  loss=0.0327  recon=0.0269  div=1.3337  acc=96.6%
+  Val    loss=0.0508  recon=0.0150  div=1.1227  acc=48.1%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  10  batch   20/48  loss=0.0326  recon=0.0249  div=5.8883  acc=93.8%
+  Epoch  10  batch   40/48  loss=0.0309  recon=0.0260  div=4.8500  acc=100.0%
+  Epoch  10  batch   48/48  loss=0.0495  recon=0.0437  div=5.7263  acc=100.0%
+
+Epoch  10/80  [4.2s]
+  Train  loss=0.0301  recon=0.0246  div=1.3105  acc=96.5%
+  Val    loss=0.0389  recon=0.0320  div=1.3708  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep010.png
+  Epoch  11  batch   20/48  loss=0.0206  recon=0.0161  div=4.4889  acc=100.0%
+  Epoch  11  batch   40/48  loss=0.0165  recon=0.0126  div=3.8810  acc=100.0%
+  Epoch  11  batch   48/48  loss=0.0332  recon=0.0289  div=4.2091  acc=100.0%
+
+Epoch  11/80  [4.2s]
+  Train  loss=0.0230  recon=0.0188  div=1.2621  acc=99.7%
+  Val    loss=0.0214  recon=0.0177  div=1.1062  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  12  batch   20/48  loss=0.0194  recon=0.0158  div=3.5262  acc=100.0%
+  Epoch  12  batch   40/48  loss=0.0185  recon=0.0140  div=4.5403  acc=100.0%
+  Epoch  12  batch   48/48  loss=0.0305  recon=0.0264  div=4.1054  acc=100.0%
+
+Epoch  12/80  [4.2s]
+  Train  loss=0.0225  recon=0.0184  div=1.2377  acc=99.2%
+  Val    loss=0.0226  recon=0.0172  div=1.2915  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  13  batch   20/48  loss=0.0203  recon=0.0162  div=3.8329  acc=100.0%
+  Epoch  13  batch   40/48  loss=0.0299  recon=0.0259  div=4.0157  acc=100.0%
+  Epoch  13  batch   48/48  loss=0.0271  recon=0.0234  div=3.6899  acc=100.0%
+
+Epoch  13/80  [4.2s]
+  Train  loss=0.0296  recon=0.0244  div=1.2429  acc=96.4%
+  Val    loss=0.0208  recon=0.0161  div=1.2211  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  14  batch   20/48  loss=0.0129  recon=0.0093  div=3.5879  acc=100.0%
+  Epoch  14  batch   40/48  loss=0.0246  recon=0.0204  div=3.9433  acc=100.0%
+  Epoch  14  batch   48/48  loss=0.0158  recon=0.0116  div=4.1812  acc=100.0%
+
+Epoch  14/80  [4.2s]
+  Train  loss=0.0235  recon=0.0193  div=1.2342  acc=99.5%
+  Val    loss=0.0145  recon=0.0106  div=1.2103  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  15  batch   20/48  loss=0.0103  recon=0.0072  div=3.1726  acc=100.0%
+  Epoch  15  batch   40/48  loss=0.0190  recon=0.0150  div=4.0561  acc=100.0%
+  Epoch  15  batch   48/48  loss=0.0352  recon=0.0316  div=3.6277  acc=100.0%
+
+Epoch  15/80  [4.2s]
+  Train  loss=0.0169  recon=0.0135  div=1.1849  acc=100.0%
+  Val    loss=0.0157  recon=0.0130  div=1.0694  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  16  batch   20/48  loss=0.0123  recon=0.0093  div=3.0367  acc=100.0%
+  Epoch  16  batch   40/48  loss=0.0488  recon=0.0412  div=3.6008  acc=75.0%
+  Epoch  16  batch   48/48  loss=0.0139  recon=0.0105  div=2.8130  acc=100.0%
+
+Epoch  16/80  [4.2s]
+  Train  loss=0.0175  recon=0.0140  div=1.1798  acc=99.2%
+  Val    loss=0.0077  recon=0.0045  div=1.1243  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  17  batch   20/48  loss=0.0206  recon=0.0155  div=5.1415  acc=100.0%
+  Epoch  17  batch   40/48  loss=0.0119  recon=0.0086  div=3.2799  acc=100.0%
+  Epoch  17  batch   48/48  loss=0.0178  recon=0.0150  div=2.7685  acc=100.0%
+
+Epoch  17/80  [4.2s]
+  Train  loss=0.0203  recon=0.0167  div=1.1833  acc=100.0%
+  Val    loss=0.0133  recon=0.0101  div=1.1824  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  18  batch   20/48  loss=0.0179  recon=0.0133  div=4.3526  acc=100.0%
+  Epoch  18  batch   40/48  loss=0.0184  recon=0.0140  div=2.9809  acc=100.0%
+  Epoch  18  batch   48/48  loss=0.0188  recon=0.0139  div=3.3320  acc=93.8%
+
+Epoch  18/80  [4.3s]
+  Train  loss=0.0222  recon=0.0178  div=1.1957  acc=96.5%
+  Val    loss=0.0263  recon=0.0078  div=1.0679  acc=48.1%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  19  batch   20/48  loss=0.0183  recon=0.0144  div=3.9410  acc=100.0%
+  Epoch  19  batch   40/48  loss=0.0259  recon=0.0224  div=3.4579  acc=100.0%
+  Epoch  19  batch   48/48  loss=0.0129  recon=0.0096  div=3.2862  acc=100.0%
+
+Epoch  19/80  [4.3s]
+  Train  loss=0.0186  recon=0.0145  div=1.1862  acc=97.7%
+  Val    loss=0.0155  recon=0.0117  div=1.2534  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  20  batch   20/48  loss=0.0165  recon=0.0134  div=2.9127  acc=100.0%
+  Epoch  20  batch   40/48  loss=0.0099  recon=0.0067  div=3.1218  acc=100.0%
+  Epoch  20  batch   48/48  loss=0.0133  recon=0.0096  div=3.6459  acc=100.0%
+
+Epoch  20/80  [4.2s]
+  Train  loss=0.0135  recon=0.0105  div=1.1534  acc=100.0%
+  Val    loss=0.0077  recon=0.0044  div=1.1931  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep020.png
+  Epoch  21  batch   20/48  loss=0.0144  recon=0.0112  div=3.2455  acc=100.0%
+  Epoch  21  batch   40/48  loss=0.0115  recon=0.0085  div=2.9862  acc=100.0%
+  Epoch  21  batch   48/48  loss=0.0135  recon=0.0103  div=3.2151  acc=100.0%
+
+Epoch  21/80  [4.2s]
+  Train  loss=0.0140  recon=0.0110  div=1.1488  acc=100.0%
+  Val    loss=0.0148  recon=0.0123  div=1.0587  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  22  batch   20/48  loss=0.0112  recon=0.0080  div=2.4210  acc=100.0%
+  Epoch  22  batch   40/48  loss=0.0150  recon=0.0119  div=2.7994  acc=100.0%
+  Epoch  22  batch   48/48  loss=0.0072  recon=0.0046  div=2.6372  acc=100.0%
+
+Epoch  22/80  [4.3s]
+  Train  loss=0.0141  recon=0.0110  div=1.1464  acc=100.0%
+  Val    loss=0.0085  recon=0.0052  div=1.2164  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  23  batch   20/48  loss=0.0121  recon=0.0093  div=2.7865  acc=100.0%
+  Epoch  23  batch   40/48  loss=0.0151  recon=0.0110  div=2.7020  acc=100.0%
+  Epoch  23  batch   48/48  loss=0.0147  recon=0.0119  div=2.8034  acc=100.0%
+
+Epoch  23/80  [4.2s]
+  Train  loss=0.0116  recon=0.0087  div=1.1208  acc=99.3%
+  Val    loss=0.0126  recon=0.0070  div=1.1426  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  24  batch   20/48  loss=0.0178  recon=0.0139  div=3.3749  acc=100.0%
+  Epoch  24  batch   40/48  loss=0.0355  recon=0.0313  div=2.5311  acc=93.8%
+  Epoch  24  batch   48/48  loss=0.0139  recon=0.0108  div=2.9464  acc=100.0%
+
+Epoch  24/80  [4.3s]
+  Train  loss=0.0140  recon=0.0104  div=1.1445  acc=97.7%
+  Val    loss=0.0174  recon=0.0140  div=1.1002  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  25  batch   20/48  loss=0.0082  recon=0.0054  div=2.8180  acc=100.0%
+  Epoch  25  batch   40/48  loss=0.0164  recon=0.0133  div=3.0089  acc=100.0%
+  Epoch  25  batch   48/48  loss=0.0136  recon=0.0104  div=3.2230  acc=100.0%
+
+Epoch  25/80  [4.3s]
+  Train  loss=0.0121  recon=0.0091  div=1.1399  acc=100.0%
+  Val    loss=0.0138  recon=0.0098  div=1.2324  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  26  batch   20/48  loss=0.0126  recon=0.0095  div=3.0902  acc=100.0%
+  Epoch  26  batch   40/48  loss=0.0106  recon=0.0081  div=2.5439  acc=100.0%
+  Epoch  26  batch   48/48  loss=0.0181  recon=0.0151  div=2.8960  acc=100.0%
+
+Epoch  26/80  [4.2s]
+  Train  loss=0.0121  recon=0.0092  div=1.1293  acc=100.0%
+  Val    loss=0.0135  recon=0.0112  div=1.0197  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  27  batch   20/48  loss=0.0122  recon=0.0092  div=2.9321  acc=100.0%
+  Epoch  27  batch   40/48  loss=0.0120  recon=0.0091  div=2.8977  acc=100.0%
+  Epoch  27  batch   48/48  loss=0.0139  recon=0.0105  div=3.4697  acc=100.0%
+
+Epoch  27/80  [4.2s]
+  Train  loss=0.0129  recon=0.0099  div=1.1347  acc=100.0%
+  Val    loss=0.0126  recon=0.0090  div=1.1832  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  28  batch   20/48  loss=0.0087  recon=0.0059  div=2.8175  acc=100.0%
+  Epoch  28  batch   40/48  loss=0.0084  recon=0.0053  div=3.0928  acc=100.0%
+  Epoch  28  batch   48/48  loss=0.0085  recon=0.0055  div=2.9268  acc=100.0%
+
+Epoch  28/80  [4.3s]
+  Train  loss=0.0110  recon=0.0082  div=1.1202  acc=100.0%
+  Val    loss=0.0065  recon=0.0032  div=1.1823  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  29  batch   20/48  loss=0.0069  recon=0.0044  div=2.5067  acc=100.0%
+  Epoch  29  batch   40/48  loss=0.0107  recon=0.0078  div=2.8475  acc=100.0%
+  Epoch  29  batch   48/48  loss=0.0177  recon=0.0143  div=3.2847  acc=100.0%
+
+Epoch  29/80  [4.3s]
+  Train  loss=0.0108  recon=0.0081  div=1.1109  acc=100.0%
+  Val    loss=0.0178  recon=0.0133  div=1.1695  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  30  batch   20/48  loss=0.0083  recon=0.0053  div=3.0329  acc=100.0%
+  Epoch  30  batch   40/48  loss=0.0058  recon=0.0033  div=2.5410  acc=100.0%
+  Epoch  30  batch   48/48  loss=0.0056  recon=0.0032  div=2.3912  acc=100.0%
+
+Epoch  30/80  [4.3s]
+  Train  loss=0.0091  recon=0.0065  div=1.1097  acc=100.0%
+  Val    loss=0.0057  recon=0.0033  div=1.0521  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep030.png
+  Epoch  31  batch   20/48  loss=0.0096  recon=0.0071  div=2.4938  acc=100.0%
+  Epoch  31  batch   40/48  loss=0.0084  recon=0.0056  div=2.7620  acc=100.0%
+  Epoch  31  batch   48/48  loss=0.0129  recon=0.0095  div=3.0099  acc=100.0%
+
+Epoch  31/80  [4.3s]
+  Train  loss=0.0095  recon=0.0068  div=1.1055  acc=99.3%
+  Val    loss=0.0426  recon=0.0046  div=1.0689  acc=48.1%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  32  batch   20/48  loss=0.0061  recon=0.0037  div=2.2723  acc=100.0%
+  Epoch  32  batch   40/48  loss=0.0108  recon=0.0082  div=2.6002  acc=100.0%
+  Epoch  32  batch   48/48  loss=0.0236  recon=0.0206  div=3.0115  acc=100.0%
+
+Epoch  32/80  [4.3s]
+  Train  loss=0.0099  recon=0.0072  div=1.1062  acc=100.0%
+  Val    loss=0.0105  recon=0.0081  div=1.0250  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  33  batch   20/48  loss=0.0129  recon=0.0103  div=2.6104  acc=100.0%
+  Epoch  33  batch   40/48  loss=0.0072  recon=0.0046  div=2.6168  acc=100.0%
+  Epoch  33  batch   48/48  loss=0.0069  recon=0.0042  div=2.6846  acc=100.0%
+
+Epoch  33/80  [4.3s]
+  Train  loss=0.0122  recon=0.0092  div=1.1283  acc=100.0%
+  Val    loss=0.0074  recon=0.0048  div=1.0894  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  34  batch   20/48  loss=0.0066  recon=0.0039  div=2.7657  acc=100.0%
+  Epoch  34  batch   40/48  loss=0.0070  recon=0.0045  div=2.4895  acc=100.0%
+  Epoch  34  batch   48/48  loss=0.0086  recon=0.0053  div=2.8241  acc=100.0%
+
+Epoch  34/80  [4.3s]
+  Train  loss=0.0088  recon=0.0060  div=1.1020  acc=99.5%
+  Val    loss=0.0067  recon=0.0036  div=1.0832  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  35  batch   20/48  loss=0.0094  recon=0.0060  div=3.3113  acc=100.0%
+  Epoch  35  batch   40/48  loss=0.0117  recon=0.0091  div=2.6198  acc=100.0%
+  Epoch  35  batch   48/48  loss=0.0159  recon=0.0126  div=3.2517  acc=100.0%
+
+Epoch  35/80  [4.3s]
+  Train  loss=0.0137  recon=0.0102  div=1.1366  acc=97.9%
+  Val    loss=0.0109  recon=0.0074  div=1.2065  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  36  batch   20/48  loss=0.0073  recon=0.0051  div=2.2499  acc=100.0%
+  Epoch  36  batch   40/48  loss=0.0081  recon=0.0062  div=1.8671  acc=100.0%
+  Epoch  36  batch   48/48  loss=0.0139  recon=0.0113  div=2.5604  acc=100.0%
+
+Epoch  36/80  [4.3s]
+  Train  loss=0.0092  recon=0.0065  div=1.1041  acc=99.7%
+  Val    loss=0.0071  recon=0.0047  div=1.0775  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  37  batch   20/48  loss=0.0061  recon=0.0037  div=2.3458  acc=100.0%
+  Epoch  37  batch   40/48  loss=0.0132  recon=0.0103  div=2.7766  acc=100.0%
+  Epoch  37  batch   48/48  loss=0.0082  recon=0.0054  div=2.7880  acc=100.0%
+
+Epoch  37/80  [4.3s]
+  Train  loss=0.0084  recon=0.0059  div=1.0949  acc=100.0%
+  Val    loss=0.0074  recon=0.0055  div=0.9780  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  38  batch   20/48  loss=0.0076  recon=0.0049  div=2.6917  acc=100.0%
+  Epoch  38  batch   40/48  loss=0.0053  recon=0.0032  div=2.1628  acc=100.0%
+  Epoch  38  batch   48/48  loss=0.0072  recon=0.0048  div=2.4135  acc=100.0%
+
+Epoch  38/80  [4.3s]
+  Train  loss=0.0079  recon=0.0053  div=1.0984  acc=100.0%
+  Val    loss=0.0073  recon=0.0050  div=1.0466  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  39  batch   20/48  loss=0.0080  recon=0.0056  div=2.3445  acc=100.0%
+  Epoch  39  batch   40/48  loss=0.0125  recon=0.0098  div=2.7133  acc=100.0%
+  Epoch  39  batch   48/48  loss=0.0131  recon=0.0106  div=2.4981  acc=100.0%
+
+Epoch  39/80  [4.3s]
+  Train  loss=0.0087  recon=0.0061  div=1.0985  acc=100.0%
+  Val    loss=0.0059  recon=0.0037  div=1.0644  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  40  batch   20/48  loss=0.0067  recon=0.0041  div=2.5634  acc=100.0%
+  Epoch  40  batch   40/48  loss=0.0077  recon=0.0050  div=2.7123  acc=100.0%
+  Epoch  40  batch   48/48  loss=0.0087  recon=0.0057  div=2.9548  acc=100.0%
+
+Epoch  40/80  [4.3s]
+  Train  loss=0.0081  recon=0.0055  div=1.0927  acc=100.0%
+  Val    loss=0.0055  recon=0.0028  div=1.1279  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep040.png
+  Epoch  41  batch   20/48  loss=0.0057  recon=0.0030  div=2.6623  acc=100.0%
+  Epoch  41  batch   40/48  loss=0.0059  recon=0.0035  div=2.3937  acc=100.0%
+  Epoch  41  batch   48/48  loss=0.0055  recon=0.0031  div=2.4299  acc=100.0%
+
+Epoch  41/80  [4.3s]
+  Train  loss=0.0067  recon=0.0043  div=1.0865  acc=100.0%
+  Val    loss=0.0059  recon=0.0031  div=1.1190  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  42  batch   20/48  loss=0.0055  recon=0.0029  div=2.6206  acc=100.0%
+  Epoch  42  batch   40/48  loss=0.0081  recon=0.0054  div=2.6465  acc=100.0%
+  Epoch  42  batch   48/48  loss=0.0165  recon=0.0138  div=2.7428  acc=100.0%
+
+Epoch  42/80  [4.3s]
+  Train  loss=0.0073  recon=0.0048  div=1.0822  acc=100.0%
+  Val    loss=0.0053  recon=0.0032  div=0.9875  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  43  batch   20/48  loss=0.0058  recon=0.0034  div=2.4241  acc=100.0%
+  Epoch  43  batch   40/48  loss=0.0044  recon=0.0023  div=2.1109  acc=100.0%
+  Epoch  43  batch   48/48  loss=0.0053  recon=0.0030  div=2.2398  acc=100.0%
+
+Epoch  43/80  [4.3s]
+  Train  loss=0.0070  recon=0.0044  div=1.0881  acc=100.0%
+  Val    loss=0.0052  recon=0.0024  div=1.1200  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  44  batch   20/48  loss=0.0085  recon=0.0061  div=2.4007  acc=100.0%
+  Epoch  44  batch   40/48  loss=0.0057  recon=0.0034  div=2.3608  acc=100.0%
+  Epoch  44  batch   48/48  loss=0.0064  recon=0.0040  div=2.4371  acc=100.0%
+
+Epoch  44/80  [4.3s]
+  Train  loss=0.0063  recon=0.0039  div=1.0786  acc=100.0%
+  Val    loss=0.0049  recon=0.0027  div=1.0422  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  45  batch   20/48  loss=0.0070  recon=0.0046  div=2.3522  acc=100.0%
+  Epoch  45  batch   40/48  loss=0.0070  recon=0.0045  div=2.4842  acc=100.0%
+  Epoch  45  batch   48/48  loss=0.0085  recon=0.0059  div=2.3441  acc=100.0%
+
+Epoch  45/80  [4.3s]
+  Train  loss=0.0075  recon=0.0051  div=1.0796  acc=100.0%
+  Val    loss=0.0051  recon=0.0029  div=1.0460  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  46  batch   20/48  loss=0.0062  recon=0.0041  div=2.1201  acc=100.0%
+  Epoch  46  batch   40/48  loss=0.0072  recon=0.0049  div=2.2877  acc=100.0%
+  Epoch  46  batch   48/48  loss=0.0066  recon=0.0043  div=2.3622  acc=100.0%
+
+Epoch  46/80  [4.3s]
+  Train  loss=0.0067  recon=0.0043  div=1.0799  acc=100.0%
+  Val    loss=0.0052  recon=0.0030  div=1.0620  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  47  batch   20/48  loss=0.0067  recon=0.0046  div=2.0879  acc=100.0%
+  Epoch  47  batch   40/48  loss=0.0089  recon=0.0061  div=2.7243  acc=100.0%
+  Epoch  47  batch   48/48  loss=0.0116  recon=0.0091  div=2.4068  acc=100.0%
+
+Epoch  47/80  [4.3s]
+  Train  loss=0.0078  recon=0.0053  div=1.0856  acc=100.0%
+  Val    loss=0.0070  recon=0.0047  div=1.0413  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  48  batch   20/48  loss=0.0072  recon=0.0049  div=2.2435  acc=100.0%
+  Epoch  48  batch   40/48  loss=0.0062  recon=0.0040  div=2.1597  acc=100.0%
+  Epoch  48  batch   48/48  loss=0.0082  recon=0.0058  div=2.4285  acc=100.0%
+
+Epoch  48/80  [4.3s]
+  Train  loss=0.0072  recon=0.0047  div=1.0878  acc=100.0%
+  Val    loss=0.0061  recon=0.0040  div=1.0613  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  49  batch   20/48  loss=0.0053  recon=0.0030  div=2.2746  acc=100.0%
+  Epoch  49  batch   40/48  loss=0.0097  recon=0.0069  div=2.7257  acc=100.0%
+  Epoch  49  batch   48/48  loss=0.0056  recon=0.0031  div=2.5180  acc=100.0%
+
+Epoch  49/80  [4.3s]
+  Train  loss=0.0064  recon=0.0040  div=1.0788  acc=100.0%
+  Val    loss=0.0052  recon=0.0030  div=1.0661  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  50  batch   20/48  loss=0.0193  recon=0.0163  div=2.1214  acc=93.8%
+  Epoch  50  batch   40/48  loss=0.0068  recon=0.0046  div=2.2220  acc=100.0%
+  Epoch  50  batch   48/48  loss=0.0053  recon=0.0028  div=2.4519  acc=100.0%
+
+Epoch  50/80  [4.3s]
+  Train  loss=0.0076  recon=0.0050  div=1.0857  acc=99.5%
+  Val    loss=0.0062  recon=0.0035  div=1.1081  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep050.png
+  Epoch  51  batch   20/48  loss=0.0082  recon=0.0053  div=2.8814  acc=100.0%
+  Epoch  51  batch   40/48  loss=0.0120  recon=0.0094  div=2.4708  acc=100.0%
+  Epoch  51  batch   48/48  loss=0.0051  recon=0.0028  div=2.3448  acc=100.0%
+
+Epoch  51/80  [4.3s]
+  Train  loss=0.0079  recon=0.0054  div=1.0859  acc=99.9%
+  Val    loss=0.0056  recon=0.0036  div=1.0359  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  52  batch   20/48  loss=0.0064  recon=0.0041  div=2.2773  acc=100.0%
+  Epoch  52  batch   40/48  loss=0.0144  recon=0.0118  div=2.5460  acc=100.0%
+  Epoch  52  batch   48/48  loss=0.0082  recon=0.0055  div=2.6521  acc=100.0%
+
+Epoch  52/80  [4.3s]
+  Train  loss=0.0077  recon=0.0052  div=1.0844  acc=100.0%
+  Val    loss=0.0084  recon=0.0051  div=1.1183  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  53  batch   20/48  loss=0.0087  recon=0.0065  div=2.1879  acc=100.0%
+  Epoch  53  batch   40/48  loss=0.0049  recon=0.0027  div=2.1900  acc=100.0%
+  Epoch  53  batch   48/48  loss=0.0067  recon=0.0045  div=2.2497  acc=100.0%
+
+Epoch  53/80  [4.3s]
+  Train  loss=0.0070  recon=0.0045  div=1.0857  acc=100.0%
+  Val    loss=0.0048  recon=0.0027  div=1.0131  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  54  batch   20/48  loss=0.0095  recon=0.0067  div=2.7665  acc=100.0%
+  Epoch  54  batch   40/48  loss=0.0054  recon=0.0028  div=2.5255  acc=100.0%
+  Epoch  54  batch   48/48  loss=0.0059  recon=0.0035  div=2.3123  acc=100.0%
+
+Epoch  54/80  [4.3s]
+  Train  loss=0.0056  recon=0.0033  div=1.0695  acc=100.0%
+  Val    loss=0.0049  recon=0.0027  div=1.0744  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  55  batch   20/48  loss=0.0080  recon=0.0055  div=2.5091  acc=100.0%
+  Epoch  55  batch   40/48  loss=0.0046  recon=0.0022  div=2.3756  acc=100.0%
+  Epoch  55  batch   48/48  loss=0.0055  recon=0.0034  div=2.0863  acc=100.0%
+
+Epoch  55/80  [4.3s]
+  Train  loss=0.0062  recon=0.0038  div=1.0749  acc=100.0%
+  Val    loss=0.0054  recon=0.0028  div=1.0583  acc=100.0%
+  LR=1.00e-03
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  56  batch   20/48  loss=0.0088  recon=0.0059  div=2.6701  acc=100.0%
+  Epoch  56  batch   40/48  loss=0.0156  recon=0.0122  div=3.1901  acc=100.0%
+  Epoch  56  batch   48/48  loss=0.0099  recon=0.0066  div=3.1968  acc=100.0%
+
+Epoch  56/80  [4.2s]
+  Train  loss=0.0154  recon=0.0097  div=1.1673  acc=91.4%
+  Val    loss=0.0291  recon=0.0097  div=1.2003  acc=48.1%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  57  batch   20/48  loss=0.0077  recon=0.0050  div=2.6565  acc=100.0%
+  Epoch  57  batch   40/48  loss=0.0065  recon=0.0038  div=2.6547  acc=100.0%
+  Epoch  57  batch   48/48  loss=0.0078  recon=0.0051  div=2.6855  acc=100.0%
+
+Epoch  57/80  [4.3s]
+  Train  loss=0.0094  recon=0.0065  div=1.1310  acc=100.0%
+  Val    loss=0.0068  recon=0.0037  div=1.1448  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  58  batch   20/48  loss=0.0066  recon=0.0040  div=2.5446  acc=100.0%
+  Epoch  58  batch   40/48  loss=0.0092  recon=0.0065  div=2.5722  acc=100.0%
+  Epoch  58  batch   48/48  loss=0.0055  recon=0.0034  div=2.0373  acc=100.0%
+
+Epoch  58/80  [4.2s]
+  Train  loss=0.0089  recon=0.0063  div=1.0982  acc=100.0%
+  Val    loss=0.0074  recon=0.0046  div=1.1588  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  59  batch   20/48  loss=0.0071  recon=0.0040  div=3.0216  acc=100.0%
+  Epoch  59  batch   40/48  loss=0.0069  recon=0.0048  div=2.1613  acc=100.0%
+  Epoch  59  batch   48/48  loss=0.0064  recon=0.0040  div=2.3396  acc=100.0%
+
+Epoch  59/80  [4.3s]
+  Train  loss=0.0078  recon=0.0053  div=1.0904  acc=100.0%
+  Val    loss=0.0046  recon=0.0023  div=1.0558  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  60  batch   20/48  loss=0.0086  recon=0.0060  div=2.5403  acc=100.0%
+  Epoch  60  batch   40/48  loss=0.0061  recon=0.0039  div=2.2110  acc=100.0%
+  Epoch  60  batch   48/48  loss=0.0059  recon=0.0031  div=2.7710  acc=100.0%
+
+Epoch  60/80  [4.3s]
+  Train  loss=0.0080  recon=0.0055  div=1.0894  acc=100.0%
+  Val    loss=0.0054  recon=0.0030  div=1.0855  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep060.png
+  Epoch  61  batch   20/48  loss=0.0048  recon=0.0024  div=2.4148  acc=100.0%
+  Epoch  61  batch   40/48  loss=0.0054  recon=0.0033  div=2.0509  acc=100.0%
+  Epoch  61  batch   48/48  loss=0.0057  recon=0.0036  div=2.1366  acc=100.0%
+
+Epoch  61/80  [4.3s]
+  Train  loss=0.0059  recon=0.0036  div=1.0710  acc=100.0%
+  Val    loss=0.0043  recon=0.0021  div=1.0466  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  62  batch   20/48  loss=0.0085  recon=0.0063  div=2.2085  acc=100.0%
+  Epoch  62  batch   40/48  loss=0.0109  recon=0.0076  div=3.2269  acc=100.0%
+  Epoch  62  batch   48/48  loss=0.0057  recon=0.0033  div=2.4003  acc=100.0%
+
+Epoch  62/80  [4.3s]
+  Train  loss=0.0064  recon=0.0041  div=1.0745  acc=100.0%
+  Val    loss=0.0055  recon=0.0029  div=1.0579  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  63  batch   20/48  loss=0.0128  recon=0.0104  div=2.3746  acc=100.0%
+  Epoch  63  batch   40/48  loss=0.0063  recon=0.0039  div=2.3483  acc=100.0%
+  Epoch  63  batch   48/48  loss=0.0048  recon=0.0026  div=2.1465  acc=100.0%
+
+Epoch  63/80  [4.3s]
+  Train  loss=0.0071  recon=0.0047  div=1.0836  acc=100.0%
+  Val    loss=0.0043  recon=0.0025  div=1.0055  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  64  batch   20/48  loss=0.0051  recon=0.0031  div=1.9595  acc=100.0%
+  Epoch  64  batch   40/48  loss=0.0099  recon=0.0079  div=2.0337  acc=100.0%
+  Epoch  64  batch   48/48  loss=0.0085  recon=0.0064  div=2.0710  acc=100.0%
+
+Epoch  64/80  [4.3s]
+  Train  loss=0.0060  recon=0.0037  div=1.0688  acc=100.0%
+  Val    loss=0.0057  recon=0.0037  div=1.0332  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  65  batch   20/48  loss=0.0046  recon=0.0025  div=2.1114  acc=100.0%
+  Epoch  65  batch   40/48  loss=0.0140  recon=0.0108  div=2.9222  acc=100.0%
+  Epoch  65  batch   48/48  loss=0.0123  recon=0.0099  div=2.4006  acc=100.0%
+
+Epoch  65/80  [4.3s]
+  Train  loss=0.0068  recon=0.0044  div=1.0721  acc=100.0%
+  Val    loss=0.0112  recon=0.0061  div=0.9554  acc=93.1%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  66  batch   20/48  loss=0.0077  recon=0.0049  div=2.6867  acc=100.0%
+  Epoch  66  batch   40/48  loss=0.0052  recon=0.0027  div=2.4474  acc=100.0%
+  Epoch  66  batch   48/48  loss=0.0061  recon=0.0030  div=3.0254  acc=100.0%
+
+Epoch  66/80  [4.3s]
+  Train  loss=0.0073  recon=0.0047  div=1.0876  acc=99.6%
+  Val    loss=0.0046  recon=0.0020  div=1.0929  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  67  batch   20/48  loss=0.0046  recon=0.0023  div=2.2867  acc=100.0%
+  Epoch  67  batch   40/48  loss=0.0051  recon=0.0025  div=2.5221  acc=100.0%
+  Epoch  67  batch   48/48  loss=0.0048  recon=0.0026  div=2.1200  acc=100.0%
+
+Epoch  67/80  [4.3s]
+  Train  loss=0.0055  recon=0.0031  div=1.0662  acc=100.0%
+  Val    loss=0.0054  recon=0.0032  div=1.0324  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  68  batch   20/48  loss=0.0051  recon=0.0028  div=2.2286  acc=100.0%
+  Epoch  68  batch   40/48  loss=0.0050  recon=0.0025  div=2.4883  acc=100.0%
+  Epoch  68  batch   48/48  loss=0.0055  recon=0.0033  div=2.1747  acc=100.0%
+
+Epoch  68/80  [4.3s]
+  Train  loss=0.0058  recon=0.0035  div=1.0678  acc=100.0%
+  Val    loss=0.0050  recon=0.0024  div=1.0939  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  69  batch   20/48  loss=0.0056  recon=0.0029  div=2.6752  acc=100.0%
+  Epoch  69  batch   40/48  loss=0.0050  recon=0.0030  div=1.9919  acc=100.0%
+  Epoch  69  batch   48/48  loss=0.0042  recon=0.0021  div=2.0951  acc=100.0%
+
+Epoch  69/80  [4.3s]
+  Train  loss=0.0052  recon=0.0029  div=1.0675  acc=100.0%
+  Val    loss=0.0046  recon=0.0024  div=1.0721  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  70  batch   20/48  loss=0.0042  recon=0.0019  div=2.3589  acc=100.0%
+  Epoch  70  batch   40/48  loss=0.0051  recon=0.0028  div=2.2928  acc=100.0%
+  Epoch  70  batch   48/48  loss=0.0066  recon=0.0040  div=2.6732  acc=100.0%
+
+Epoch  70/80  [4.3s]
+  Train  loss=0.0056  recon=0.0033  div=1.0629  acc=100.0%
+  Val    loss=0.0056  recon=0.0030  div=1.0978  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep070.png
+  Epoch  71  batch   20/48  loss=0.0054  recon=0.0030  div=2.3501  acc=100.0%
+  Epoch  71  batch   40/48  loss=0.0039  recon=0.0017  div=2.1286  acc=100.0%
+  Epoch  71  batch   48/48  loss=0.0045  recon=0.0023  div=2.2133  acc=100.0%
+
+Epoch  71/80  [4.3s]
+  Train  loss=0.0051  recon=0.0028  div=1.0678  acc=100.0%
+  Val    loss=0.0041  recon=0.0017  div=1.0822  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  72  batch   20/48  loss=0.0063  recon=0.0035  div=2.2391  acc=100.0%
+  Epoch  72  batch   40/48  loss=0.0044  recon=0.0024  div=2.0033  acc=100.0%
+  Epoch  72  batch   48/48  loss=0.0046  recon=0.0024  div=2.1845  acc=100.0%
+
+Epoch  72/80  [4.3s]
+  Train  loss=0.0054  recon=0.0030  div=1.0632  acc=99.9%
+  Val    loss=0.0036  recon=0.0014  div=1.0640  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/best_model.pt
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  73  batch   20/48  loss=0.0048  recon=0.0023  div=2.4542  acc=100.0%
+  Epoch  73  batch   40/48  loss=0.0038  recon=0.0016  div=2.2199  acc=100.0%
+  Epoch  73  batch   48/48  loss=0.0040  recon=0.0018  div=2.1778  acc=100.0%
+
+Epoch  73/80  [4.3s]
+  Train  loss=0.0043  recon=0.0021  div=1.0580  acc=100.0%
+  Val    loss=0.0038  recon=0.0015  div=1.1019  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  74  batch   20/48  loss=0.0041  recon=0.0020  div=2.1020  acc=100.0%
+  Epoch  74  batch   40/48  loss=0.0050  recon=0.0028  div=2.2435  acc=100.0%
+  Epoch  74  batch   48/48  loss=0.0065  recon=0.0042  div=2.2453  acc=100.0%
+
+Epoch  74/80  [4.3s]
+  Train  loss=0.0050  recon=0.0026  div=1.0623  acc=99.9%
+  Val    loss=0.0051  recon=0.0030  div=1.0296  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  75  batch   20/48  loss=0.0057  recon=0.0035  div=2.1788  acc=100.0%
+  Epoch  75  batch   40/48  loss=0.0043  recon=0.0022  div=2.0192  acc=100.0%
+  Epoch  75  batch   48/48  loss=0.0042  recon=0.0023  div=1.9095  acc=100.0%
+
+Epoch  75/80  [4.3s]
+  Train  loss=0.0062  recon=0.0038  div=1.0726  acc=100.0%
+  Val    loss=0.0044  recon=0.0023  div=1.0247  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  76  batch   20/48  loss=0.0049  recon=0.0029  div=1.9932  acc=100.0%
+  Epoch  76  batch   40/48  loss=0.0050  recon=0.0025  div=2.4256  acc=100.0%
+  Epoch  76  batch   48/48  loss=0.0046  recon=0.0024  div=2.1780  acc=100.0%
+
+Epoch  76/80  [4.3s]
+  Train  loss=0.0054  recon=0.0030  div=1.0658  acc=99.6%
+  Val    loss=0.0043  recon=0.0022  div=1.0262  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  77  batch   20/48  loss=0.0039  recon=0.0017  div=2.1940  acc=100.0%
+  Epoch  77  batch   40/48  loss=0.0067  recon=0.0044  div=2.2921  acc=100.0%
+  Epoch  77  batch   48/48  loss=0.0051  recon=0.0031  div=1.9452  acc=100.0%
+
+Epoch  77/80  [4.3s]
+  Train  loss=0.0054  recon=0.0031  div=1.0628  acc=100.0%
+  Val    loss=0.0053  recon=0.0031  div=1.0199  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  78  batch   20/48  loss=0.0050  recon=0.0027  div=2.2405  acc=100.0%
+  Epoch  78  batch   40/48  loss=0.0044  recon=0.0020  div=2.3807  acc=100.0%
+  Epoch  78  batch   48/48  loss=0.0046  recon=0.0024  div=2.2206  acc=100.0%
+
+Epoch  78/80  [4.3s]
+  Train  loss=0.0055  recon=0.0031  div=1.0688  acc=99.7%
+  Val    loss=0.0041  recon=0.0020  div=1.0364  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  79  batch   20/48  loss=0.0055  recon=0.0033  div=2.1844  acc=100.0%
+  Epoch  79  batch   40/48  loss=0.0057  recon=0.0033  div=2.4407  acc=100.0%
+  Epoch  79  batch   48/48  loss=0.0048  recon=0.0027  div=2.0859  acc=100.0%
+
+Epoch  79/80  [4.3s]
+  Train  loss=0.0050  recon=0.0028  div=1.0612  acc=100.0%
+  Val    loss=0.0044  recon=0.0024  div=0.9998  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+  Epoch  80  batch   20/48  loss=0.0035  recon=0.0014  div=2.0934  acc=100.0%
+  Epoch  80  batch   40/48  loss=0.0049  recon=0.0024  div=2.4878  acc=100.0%
+  Epoch  80  batch   48/48  loss=0.0045  recon=0.0020  div=2.4252  acc=100.0%
+
+Epoch  80/80  [4.3s]
+  Train  loss=0.0044  recon=0.0022  div=1.0593  acc=100.0%
+  Val    loss=0.0048  recon=0.0025  div=1.0401  acc=100.0%
+  LR=9.99e-04
+  Checkpoint saved  runs/exp_02/last_model.pt
+Saved: runs/exp_02/training_curves.png
+Saved: runs/exp_02/prediction_ep080.png
+Loading best checkpoint for final test evaluation...
+Loaded checkpoint from runs/exp_02/best_model.pt  (epoch 72)
+
+Test set results:
+  loss=0.0034
+  recon=0.0013
+  rel_l2=0.0249  (2.49%)
+  mean_div=1.03128
+  classifier acc=100.0%
+Saved: runs/exp_02/confusion_matrix.png
+Saved: runs/exp_02/training_curves.png
+Training complete.
+Best val loss : 0.0036
+Outputs saved : runs/exp_02/
+  best_model.pt, training_curves.png, confusion_matrix.png
+  prediction_ep*.png  (every 10 epochs)
+> python train/evaluate_dns_v2.py --checkpoint runs/exp_02/best_model.pt
+Device: cuda | Out: runs/stage5
+Loaded checkpoint epoch=72  val_loss=0.0036
+
+Generating 400 synthetic DNS snapshots (Re=5000)...
+  Generated 100/400
+  Generated 200/400
+  Generated 300/400
+  Generated 400/400
+
+  Spectral slope verification (target -1.667):
+  mean slope = 0.222  WARNING: slope off
+  Shape: (400, 3, 64, 64)
+
+Preprocessing 400 DNS snapshots...
+  Loaded Stage 4 stats
+  mean=[0.0138 0.0038 0.    ], std=[0.1935 0.1177 0.0387]
+  coarse range: [-1682.249, 1759.369]
+  fine   range: [-1907.568, 1839.879]
+Split: fine-tune=300  test=100
+
+Zero-shot evaluation...
+  MSE=10502.9337  RelL2=48.8%  div=475.4412
+Fine-tuning strategy: freeze all except dec1 + output_conv
+  epochs=30  lr=5e-05
+
+  Frozen     :  9,082,053  (97.7%)
+  Trainable  :    213,571  (2.3%)
+  Modules    : ['dec1', 'output_conv']
+
+  FT   1/30  loss=44264.7020  recon=44264.5464  div=155.96536  lr=4.99e-05
+  FT   5/30  loss=43286.3624  recon=43285.9174  div=444.99957  lr=4.68e-05
+  FT  10/30  loss=41073.8659  recon=41067.0327  div=6833.02165  lr=3.81e-05
+  FT  15/30  loss=40420.6489  recon=40413.6705  div=6978.21558  lr=2.63e-05
+  FT  20/30  loss=39860.0957  recon=39853.6877  div=6408.04259  lr=1.44e-05
+  FT  25/30  loss=39877.6929  recon=39871.4167  div=6276.18902  lr=5.68e-06
+  FT  30/30  loss=39647.4992  recon=39641.4052  div=6094.23785  lr=2.50e-06
+
+Post fine-tuning evaluation...
+  MSE=47026.0636  RelL2=94.5%  div=50.8651
+Metric                      Zero-shot     Fine-tuned
+  mse                     10502.93373    47026.06362 ↑
+  rel_l2                      0.48771        0.94512 ↑
+  mean_div                  475.44118       50.86505 ↓
+Spectral slope analysis (target: -1.667)
+  DNS truth              slope=+0.181  err=1.848  needs work
+  Coarse                 slope=-3.050  err=1.383  needs work
+  Zero-shot              slope=-2.514  err=0.848  needs work
+  Fine-tuned             slope=-2.814  err=1.148  needs work
