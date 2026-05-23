@@ -3,30 +3,21 @@ import torch.nn as nn
 
 
 class TurbulenceLoss(nn.Module):
-    """
-    Physics-informed loss.
-
-    FIX vs v1:
-      - lambda_div: 0.1 → 0.001  (was dominating at init: 56344 vs 23 recon)
-      - Divergence computed ONLY on channels 0,1 (u,v) — never channel 2 (p)
-      - Added per-channel reconstruction weight so pressure (large values)
-        doesn't dominate MSE either. Velocity channels weighted 3:3:1 (u:v:p).
-
-    L_total = L_recon + lambda_div * L_div + lambda_cls * L_cls
-
-    Starting values (can tune):
-      lambda_div = 0.001   (increase to 0.01 after epoch 10 if div still high)
-      lambda_cls = 0.01
-    """
-
-    def __init__(self, lambda_div: float = 0.001,
+    def __init__(self,
+                 lambda_div: float = 0.001,
                  lambda_cls: float = 0.01,
-                 dx: float = 1.0 / 64):
+                 dx: float = 1.0 / 64,
+                 class_weights=None):
         super().__init__()
         self.lambda_div = lambda_div
         self.lambda_cls = lambda_cls
         self.dx = dx
-        self.ce = nn.CrossEntropyLoss()
+
+        if class_weights is not None:
+            self.register_buffer("class_weights", class_weights)
+        else:
+            self.class_weights = None
+        self.ce = nn.CrossEntropyLoss(weight=self.class_weights)
 
         self.register_buffer(
             "ch_weights",
@@ -51,5 +42,10 @@ class TurbulenceLoss(nn.Module):
         div_loss = self.divergence_loss(pred_field)
         cls_loss = self.ce(pred_logits, true_labels)
 
-        total = recon_loss + self.lambda_div * div_loss + self.lambda_cls * cls_loss
+        total = (
+            recon_loss
+            + self.lambda_div * div_loss
+            + self.lambda_cls * cls_loss
+        )
+
         return total, recon_loss, div_loss, cls_loss

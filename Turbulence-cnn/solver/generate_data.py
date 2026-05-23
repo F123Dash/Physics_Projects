@@ -41,11 +41,28 @@ def run_simulation(Re=1000, N=64, save_dir=None, divergence_fn=None, apply_bc_fn
             snapshots.append(snap)
             snap_n += 1
             diagnostics_fn(u, v, p, t, step_n, cfg)
-        if step_n > 500 and is_converged_fn(u, u_prev, v, v_prev, tol=1e-7):
+        if step_n > 1000 and is_converged_fn(u, u_prev, v, v_prev, tol=1e-7):
             print(f"   Converged at t={t:.3f}, step={step_n}")
-            snap = np.stack([u, v, p], axis=0)
-            np.save(os.path.join(save_dir, f"Re_{Re}", f"snap_{snap_n:04d}.npy"), snap)
-            snap_n += 1
+            for extra in range(150):
+                cfg.dt = stable_dt_fn(
+                    u,
+                    v,
+                    cfg.dx,
+                    cfg.dy,
+                    cfg.nu
+                )
+                u, v, p = step_fn(u, v, p, cfg)
+                p -= p.mean()
+                snap = np.stack([u, v, p], axis=0)
+                np.save(
+                    os.path.join(
+                        save_dir,
+                        f"Re_{Re}",
+                        f"snap_{snap_n:05d}.npy"
+                    ),
+                    snap.astype(np.float32)
+                )
+                snap_n += 1
             break
 
     print(f"\nDone. Saved {snap_n} snapshots to {os.path.join(save_dir, f'Re_{Re}')}/")

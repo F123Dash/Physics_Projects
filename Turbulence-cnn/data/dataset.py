@@ -144,7 +144,6 @@ class TurbulenceDataset(Dataset):
         self.augment   = augment
         self.noise_std = noise_std
         self.items     = []
-
         for field, label in zip(fields, labels):
             norm = normalise(field, stats)
             self.items.append((norm, label))
@@ -189,65 +188,126 @@ def make_dataloaders(data_dir: str,
                      num_workers: int = 0,
                      seed: int = 42,
                      output_dir: str = None):
+    from collections import Counter
     print(f"Building turbulence dataset from: {data_dir}")
-
     fields, labels = load_all_snapshots(data_dir)
-
+    counts = Counter(labels)
+    min_count = min(counts.values())
+    cap = min_count * 3
+    capped_fields = []
+    capped_labels = []
+    class_seen = Counter()
+    for f, l in zip(fields, labels):
+        if class_seen[l] < cap:
+            capped_fields.append(f)
+            capped_labels.append(l)
+            class_seen[l] += 1
+    fields = capped_fields
+    labels = capped_labels
+    print(f"After capping: {Counter(labels)}")
     if len(fields) == 0:
         raise ValueError("No snapshots loaded. Run the NS solver first.")
 
     stats = compute_stats(fields, output_dir=output_dir)
 
     label_counts = label_histogram(labels)
-    label_info = ", ".join([f"{k}:{v}" for k, v in sorted(label_counts.items())])
+
+    label_info = ", ".join(
+        [f"{k}:{v}" for k, v in sorted(label_counts.items())]
+    )
+
     print(f"Label distribution: {label_info}")
     if len(label_counts) < 2:
         print("Warning: only one class present; accuracy will be trivial.")
 
     torch.manual_seed(seed)
     train_idx, val_idx, test_idx = stratified_split_indices(
-        labels, val_fraction, test_fraction, seed
+        labels,
+        val_fraction,
+        test_fraction,
+        seed
     )
 
     n_train = len(train_idx)
-    n_val   = len(val_idx)
-    n_test  = len(test_idx)
+    n_val = len(val_idx)
+    n_test = len(test_idx)
 
     train_fields = [fields[i] for i in train_idx]
     train_labels = [labels[i] for i in train_idx]
-    val_fields   = [fields[i] for i in val_idx]
-    val_labels   = [labels[i] for i in val_idx]
-    test_fields  = [fields[i] for i in test_idx]
-    test_labels  = [labels[i] for i in test_idx]
+    val_fields = [fields[i] for i in val_idx]
+    val_labels = [labels[i] for i in val_idx]
+    test_fields = [fields[i] for i in test_idx]
+    test_labels = [labels[i] for i in test_idx]
 
     print(f"\nSplit: train={n_train}  val={n_val}  test={n_test}")
     print(f"  Train labels: {label_histogram(train_labels)}")
     print(f"  Val labels  : {label_histogram(val_labels)}")
     print(f"  Test labels : {label_histogram(test_labels)}")
 
-    train_ds = TurbulenceDataset(train_fields, train_labels, stats,
-                                  augment=True,  noise_std=NOISE_STD)
-    val_ds   = TurbulenceDataset(val_fields,   val_labels,   stats,
-                                  augment=False, noise_std=0.0)
-    test_ds  = TurbulenceDataset(test_fields,  test_labels,  stats,
-                                  augment=False, noise_std=0.0)
+    train_ds = TurbulenceDataset(
+        train_fields,
+        train_labels,
+        stats,
+        augment=True,
+        noise_std=NOISE_STD
+    )
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size,
-                               shuffle=True,  num_workers=num_workers,
-                               pin_memory=True, drop_last=True)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size,
-                               shuffle=False, num_workers=num_workers,
-                               pin_memory=True)
-    test_loader  = DataLoader(test_ds,  batch_size=batch_size,
-                               shuffle=False, num_workers=num_workers,
-                               pin_memory=True)
+    val_ds = TurbulenceDataset(
+        val_fields,
+        val_labels,
+        stats,
+        augment=False,
+        noise_std=0.0
+    )
+
+    test_ds = TurbulenceDataset(
+        test_fields,
+        test_labels,
+        stats,
+        augment=False,
+        noise_std=0.0
+    )
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=True
+    )
+
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
 
     print(f"\nDataloaders ready:")
     print(f"  train: {len(train_loader)} batches × batch_size={batch_size}")
     print(f"  val:   {len(val_loader)} batches")
     print(f"  test:  {len(test_loader)} batches")
-
-    return train_loader, val_loader, test_loader, stats
+    counts = Counter(labels)
+    n_total = len(labels)
+    weights = torch.tensor(
+        [
+            n_total / (len(counts) * counts.get(i, 1))
+            for i in range(5)
+        ],
+        dtype=torch.float32
+    )
+    print(f"Class weights: {weights}")
+    return train_loader, val_loader, test_loader, stats, weights
 
 
 def visualise_sample(dataset: TurbulenceDataset,
@@ -363,7 +423,7 @@ if __name__ == "__main__":
     snapshot_dir = os.path.join(project_root, "snapshots")
     train_data_dir = os.path.join(project_root, "train-data")
     
-    train_loader, val_loader, test_loader, stats = make_dataloaders(
+    train_loader, val_loader, test_loader, stats,class_weights = make_dataloaders(
         data_dir   = snapshot_dir,
         batch_size = 16,
         val_fraction  = 0.15,

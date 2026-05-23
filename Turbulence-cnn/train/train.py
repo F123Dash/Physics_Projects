@@ -19,7 +19,7 @@ def get_args():
     p = argparse.ArgumentParser(description="Train turbulence U-Net")
     p.add_argument("--data_dir",    default="snapshots")
     p.add_argument("--out_dir",     default="runs/exp_01")
-    p.add_argument("--epochs",      type=int,   default=80)
+    p.add_argument("--epochs",      type=int,   default=100)
     p.add_argument("--batch_size",  type=int,   default=16)
     p.add_argument("--lr",          type=float, default=1e-3)
     p.add_argument("--lr_min",      type=float, default=1e-5)
@@ -27,7 +27,7 @@ def get_args():
     p.add_argument("--lambda_cls",  type=float, default=0.01)
     p.add_argument("--grad_clip",   type=float, default=1.0)
     p.add_argument("--base_ch",     type=int,   default=64)
-    p.add_argument("--seed",        type=int,   default=42)
+    p.add_argument("--seed",        type=int,   default=67)
     p.add_argument("--num_workers", type=int,   default=0)
     return p.parse_args()
 
@@ -235,20 +235,22 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nDevice: {device}")
     print(f"Output dir: {args.out_dir}")
-    train_loader, val_loader, test_loader, stats = make_dataloaders(
-        data_dir    = args.data_dir,
-        batch_size  = args.batch_size,
-        num_workers = args.num_workers,
+    train_loader, val_loader, test_loader, stats, class_weights = make_dataloaders(
+        data_dir=args.data_dir,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
     )
     model = TurbulenceUNet(
-        in_ch=3, out_ch=3,
-        base_ch=args.base_ch,
-        n_classes=5
-    ).to(device)
+            in_ch=3,
+            out_ch=3,
+            base_ch=args.base_ch,
+            n_classes=5
+        ).to(device)
     print(f"\nModel parameters: {count_parameters(model):,}")
     criterion = TurbulenceLoss(
         lambda_div=args.lambda_div,
         lambda_cls=args.lambda_cls,
+        class_weights=class_weights.to(device)
     )
 
     optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)

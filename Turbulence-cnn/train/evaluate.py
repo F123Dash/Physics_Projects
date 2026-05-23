@@ -1,15 +1,3 @@
-"""
-Stage 5 — DNS Super-Resolution & Transfer Learning  v3
-Fixes over v2:
-    FIX A — DNS normalisation: compute stats FROM the DNS data itself,
-                     never apply cavity-flow stats to DNS fields.
-                     The two domains have completely different pressure scales.
-    FIX B — Synthetic DNS generator: use uniform random phases on [0, 2pi]
-                     (not Gaussian). Verified to produce slope -1.63 to -1.70.
-
-Run: python train/evaluate.py --checkpoint runs/exp_02/best_model.pt
-"""
-
 import os
 import sys
 import argparse
@@ -39,17 +27,13 @@ def get_args():
     return p.parse_args()
 
 def generate_synthetic_dns(n_samples=400, N=64, Re=5000, seed=42):
-    """
-    Correct synthetic DNS with verified Kolmogorov spectrum.
-    Uses uniform random phases — the only correct method.
-    """
     rng = np.random.default_rng(seed)
     print(f"\nGenerating {n_samples} synthetic DNS snapshots (Re={Re})...")
     print(f"  Using uniform phase method (fixed from v2 Gaussian phases)")
 
     kx_1d = np.fft.fftfreq(N, d=1.0 / N)
     ky_1d = np.fft.fftfreq(N, d=1.0 / N)
-    KX, KY = np.meshgrid(kx_1d, ky_1d, indexing='ij')
+    KX, KY = np.meshgrid(kx_1d, ky_1d, indexing='xy')
     K = np.sqrt(KX**2 + KY**2)
 
     k_eta = N // 4
@@ -155,26 +139,15 @@ def load_jhtdb_dns(h5_path, n_samples=300, N=64):
     return fields
 
 def preprocess_dns(fields):
-    """
-    FIX A: Normalise DNS fields using DNS-computed statistics.
-    Never import cavity flow stats for DNS data.
-
-    Returns: coarse tensor, fine tensor, dns_stats dict
-    """
     N_SNAP, C, H, W = fields.shape
     print(f"\nPreprocessing {N_SNAP} DNS snapshots...")
-
     mean = fields.mean(axis=(0, 2, 3))
     std  = fields.std(axis=(0, 2, 3)).clip(min=1e-8)
     dns_stats = {'mean': mean, 'std': std}
-
     print(f"  DNS stats — mean: {mean.round(4)}  std: {std.round(4)}")
-
     fields_norm = (fields - mean[None, :, None, None]) / std[None, :, None, None]
-
     print(f"  Normalised range: [{fields_norm.min():.2f}, {fields_norm.max():.2f}]")
     print(f"  Expected: roughly [-4, +4] for well-normalised data")
-
     factor = H // 16
     coarse_list = []
     for i in range(N_SNAP):
@@ -184,7 +157,6 @@ def preprocess_dns(fields):
             zoom(coarse_small[c], factor, order=1) for c in range(C)
         ], axis=0)
         coarse_list.append(coarse_up.astype(np.float32))
-
     coarse = torch.from_numpy(np.stack(coarse_list, axis=0))
     fine   = torch.from_numpy(fields_norm.astype(np.float32))
     return coarse, fine, dns_stats
@@ -245,13 +217,10 @@ def evaluate(model, coarse, fine, device, batch_size=16):
 
 def finetune(model, coarse_train, fine_train, device,
              epochs=30, lr=5e-5, batch_size=16):
-    print(f"\n{'='*55}")
     print("Fine-tuning: dec1 + output_conv only")
     print(f"  epochs={epochs}  lr={lr}")
-
     for p in model.parameters():
         p.requires_grad = False
-
     trainable_modules = ['dec1', 'output_conv']
     frozen_count = trainable_count = 0
 
@@ -366,7 +335,6 @@ def plot_vorticity(coarse, fine, pred_zero, pred_ft, out_dir, idx=0):
     f  = fine[idx, 0].numpy();     vf = fine[idx, 1].numpy()
     z  = pred_zero[idx, 0].numpy(); vz = pred_zero[idx, 1].numpy()
     ft = pred_ft[idx, 0].numpy();  vft = pred_ft[idx, 1].numpy()
-
     wc = vort(c, vc); wf = vort(f, vf); wz = vort(z, vz); wft = vort(ft, vft)
     err_z = np.abs(wf - wz)
     err_ft = np.abs(wf - wft)

@@ -26,8 +26,8 @@ class NSconfig:
  
         # Time
         self.dt       = 0.5 * self.dx / self.U          # initial CFL-safe timestep
-        self.t_end    = max(40.0, Re / 8.0)             # longer run for developed flow
-        self.t_start_save = self.t_end * 0.30           # skip transient
+        self.t_end    = max(80.0, Re / 8.0)             # longer run for developed flow
+        self.t_start_save = self.t_end * 0.15           # skip transient
         self.save_every = 10                            # save snapshot every N steps
         self.n_poisson = 200                            # SOR iterations for pressure each step
         self.sor_omega = 1.5                            # SOR over-relaxation
