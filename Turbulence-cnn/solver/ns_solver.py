@@ -25,12 +25,12 @@ class NSconfig:
         self.nu  = self.U * self.L / Re                 # kinematic viscosity = UL/Re
  
         # Time
-        self.dt       = 0.5 * self.dx / self.U          # initial CFL-safe timestep
+        self.dt       = 1e-3#0.5 * self.dx / self.U          # initial CFL-safe timestep
         self.t_end    = max(80.0, Re / 8.0)             # longer run for developed flow
-        self.t_start_save = self.t_end * 0.15           # skip transient
+        self.t_start_save = self.t_end * 0.30           # skip transient
         self.save_every = 10                            # save snapshot every N steps
-        self.n_poisson = 200                            # SOR iterations for pressure each step
-        self.sor_omega = 1.5                            # SOR over-relaxation
+        self.n_poisson = 50                            # SOR iterations for pressure each step
+        self.sor_omega = 1.0                            # SOR over-relaxation
  
         print(f"Config: Re={Re}, N={N}x{N}, nu={self.nu:.5f}, "
               f"t_end={self.t_end:.1f}, save after t={self.t_start_save:.1f}")
@@ -77,7 +77,16 @@ def advect_upwind(u, v, phi, dx, dy):
         (phi[i, jp] - phi[i, j]) / dy,
     )
 
-    adv[i, j] = u_c * dphi_dx + v_c * dphi_dy
+    #trace_val = u_c * dphi_dx + v_c * dphi_dy
+    #print(
+    #    "TRACE:",
+    #    "max(u)=", np.max(np.abs(u_c)),
+    #    "max(v)=", np.max(np.abs(v_c)),
+    #    "max(dphi_dx)=", np.max(np.abs(dphi_dx)),
+    #    "max(dphi_dy)=", np.max(np.abs(dphi_dy)),
+    #    "max(adv)=", np.max(np.abs(trace_val)),
+    #)
+    adv[i, j] = u_c * dphi_dx + v_c * dphi_dy#trace_val
     return adv
 
 
@@ -138,13 +147,28 @@ def step(u, v, p, cfg):
     # Final BCs
     u_new, v_new = apply_bc(u_new, v_new, cfg.U)
  
+    u_new = np.clip(u_new, -10.0, 10.0)
+    v_new = np.clip(v_new, -10.0, 10.0)
     return u_new, v_new, p
  
-def stable_dt(u, v, dx, dy, nu, safety=0.4):
-    max_vel = max(np.max(np.abs(u)), np.max(np.abs(v)), 1e-8)
+def stable_dt(u, v, dx, dy, nu, safety=0.2):
+
+    max_vel = max(
+        np.max(np.abs(u)),
+        np.max(np.abs(v)),
+        1.0
+    )
+
     dt_conv = safety * min(dx, dy) / max_vel
+
     dt_visc = safety * min(dx, dy)**2 / (4.0 * nu)
-    return min(dt_conv, dt_visc)
+
+    dt = min(dt_conv, dt_visc)
+
+    # absolute hard cap
+    dt = min(dt, 1e-3)
+
+    return dt
  
 def diagnostics(u, v, p, t, step_n, cfg):
     div_max = np.max(np.abs(divergence(u, v, cfg.dx, cfg.dy)))

@@ -33,7 +33,7 @@ def generate_synthetic_dns(n_samples=400, N=64, Re=5000, seed=42):
 
     kx_1d = np.fft.fftfreq(N, d=1.0 / N)
     ky_1d = np.fft.fftfreq(N, d=1.0 / N)
-    KX, KY = np.meshgrid(kx_1d, ky_1d, indexing='xy')
+    KX, KY = np.meshgrid(kx_1d, ky_1d, indexing='ij')
     K = np.sqrt(KX**2 + KY**2)
 
     k_eta = N // 4
@@ -168,7 +168,7 @@ def energy_spectrum(u, v):
     energy = 0.5 * (np.abs(u_hat)**2 + np.abs(v_hat)**2) / N**2
     kx = np.fft.fftfreq(N) * N
     ky = np.fft.fftfreq(N) * N
-    KX, KY = np.meshgrid(kx, ky)
+    KX, KY = np.meshgrid(kx, ky, indexing='ij')  # must match generator
     K = np.sqrt(KX**2 + KY**2)
     k_bins = np.arange(1, N//2)
     E_k = np.array([energy[(K >= k-0.5) & (K < k+0.5)].sum() for k in k_bins])
@@ -221,7 +221,7 @@ def finetune(model, coarse_train, fine_train, device,
     print(f"  epochs={epochs}  lr={lr}")
     for p in model.parameters():
         p.requires_grad = False
-    trainable_modules = ['dec1', 'output_conv']
+    trainable_modules = ['dec1', 'dec2', 'dec3', 'output_conv', 'bottleneck']
     frozen_count = trainable_count = 0
 
     for name, param in model.named_parameters():

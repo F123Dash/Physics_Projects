@@ -12,17 +12,16 @@ class TurbulenceLoss(nn.Module):
         self.lambda_div = lambda_div
         self.lambda_cls = lambda_cls
         self.dx = dx
-
-        if class_weights is not None:
-            self.register_buffer("class_weights", class_weights)
-        else:
-            self.class_weights = None
-        self.ce = nn.CrossEntropyLoss(weight=self.class_weights)
-
         self.register_buffer(
             "ch_weights",
             torch.tensor([3.0, 3.0, 1.0]).view(1, 3, 1, 1)
         )
+        if class_weights is not None:
+            self.register_buffer("class_weights", class_weights.float())
+            self.ce = nn.CrossEntropyLoss(weight=self.class_weights)
+        else:
+            self.class_weights = None
+            self.ce = nn.CrossEntropyLoss()
 
     def divergence_loss(self, pred: torch.Tensor) -> torch.Tensor:
         u_x = pred[:, 0, :, :]
