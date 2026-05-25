@@ -35,3 +35,8 @@ __pycache__
 **/*.jpeg
 **/*.svg
 **/*.pdf
+
+
+/Turbulence-cnn/runs
+/Turbulence-cnn/train-data
+/Turbulence-cnn/img_out

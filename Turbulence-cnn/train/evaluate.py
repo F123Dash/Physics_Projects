@@ -23,8 +23,19 @@ def get_args():
     p.add_argument("--ft_epochs",   type=int,   default=30)
     p.add_argument("--ft_lr",       type=float, default=5e-5)
     p.add_argument("--base_ch",     type=int,   default=64)
-    p.add_argument("--seed",        type=int,   default=42)
+    p.add_argument("--seed",        type=int,   default=None)
     return p.parse_args()
+
+
+def init_seed(seed):
+    if seed is None:
+        seed = int(np.random.default_rng().integers(0, 2**32 - 1))
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    print(f"Seed: {seed}")
+    return seed
 
 def generate_synthetic_dns(n_samples=400, N=64, Re=5000, seed=42):
     rng = np.random.default_rng(seed)
@@ -38,7 +49,7 @@ def generate_synthetic_dns(n_samples=400, N=64, Re=5000, seed=42):
 
     k_eta = N // 4
     K_safe = np.where(K > 0, K, 1.0)
-    amplitude = K_safe**(-7/6) * np.exp(-0.5 * (K_safe / k_eta)**2)
+    amplitude = K_safe**(-7/3) * np.exp(-0.5 * (K_safe / k_eta)**2)
     amplitude[0, 0] = 0.0
 
     fields = []
@@ -221,7 +232,7 @@ def finetune(model, coarse_train, fine_train, device,
     print(f"  epochs={epochs}  lr={lr}")
     for p in model.parameters():
         p.requires_grad = False
-    trainable_modules = ['dec1', 'dec2', 'dec3', 'output_conv', 'bottleneck']
+    trainable_modules = ['dec1', 'output_conv']
     frozen_count = trainable_count = 0
 
     for name, param in model.named_parameters():
@@ -244,7 +255,7 @@ def finetune(model, coarse_train, fine_train, device,
         optimizer, T_max=epochs, eta_min=lr/20
     )
 
-    criterion = TurbulenceLoss(lambda_div=0.0, lambda_cls=0.0)
+    criterion = TurbulenceLoss(lambda_div=0.001, lambda_cls=0.0)
 
     dummy_labels = torch.zeros(batch_size, dtype=torch.long).to(device)
     loader = DataLoader(TensorDataset(coarse_train, fine_train),
@@ -422,7 +433,7 @@ def print_slopes(datasets):
 
 def main():
     args = get_args()
-    torch.manual_seed(args.seed); np.random.seed(args.seed)
+    seed = init_seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -444,7 +455,7 @@ def main():
     if args.dns_path and os.path.exists(args.dns_path):
         raw = load_jhtdb_dns(args.dns_path, args.n_dns, N=64)
     else:
-        raw = generate_synthetic_dns(args.n_dns, N=64, Re=5000, seed=args.seed)
+        raw = generate_synthetic_dns(args.n_dns, N=64, Re=5000, seed=seed)
 
     coarse, fine, dns_stats = preprocess_dns(raw)
 

@@ -186,10 +186,13 @@ def make_dataloaders(data_dir: str,
                      val_fraction: float = 0.15,
                      test_fraction: float = 0.05,
                      num_workers: int = 0,
-                     seed: int = 42,
+                     seed: int = None,
                      output_dir: str = None):
     from collections import Counter
     print(f"Building turbulence dataset from: {data_dir}")
+    if seed is None:
+        seed = int(np.random.default_rng().integers(0, 2**32 - 1))
+    print(f"Dataset RNG seed: {seed}")
     fields, labels = load_all_snapshots(data_dir)
     counts = Counter(labels)
     min_count = min(counts.values())
@@ -268,13 +271,23 @@ def make_dataloaders(data_dir: str,
         noise_std=0.0
     )
 
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    def _worker_init_fn(worker_id):
+        worker_seed = seed + worker_id + 1
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=True
+        drop_last=True,
+        generator=generator,
+        worker_init_fn=_worker_init_fn
     )
 
     val_loader = DataLoader(
@@ -282,7 +295,9 @@ def make_dataloaders(data_dir: str,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
+        generator=generator,
+        worker_init_fn=_worker_init_fn
     )
 
     test_loader = DataLoader(
@@ -290,7 +305,9 @@ def make_dataloaders(data_dir: str,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
+        generator=generator,
+        worker_init_fn=_worker_init_fn
     )
 
     print(f"\nDataloaders ready:")

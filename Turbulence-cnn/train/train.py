@@ -27,9 +27,20 @@ def get_args():
     p.add_argument("--lambda_cls",  type=float, default=0.01)
     p.add_argument("--grad_clip",   type=float, default=1.0)
     p.add_argument("--base_ch",     type=int,   default=64)
-    p.add_argument("--seed",        type=int,   default=67)
+    p.add_argument("--seed",        type=int,   default=None)
     p.add_argument("--num_workers", type=int,   default=0)
     return p.parse_args()
+
+
+def init_seed(seed):
+    if seed is None:
+        seed = int(np.random.default_rng().integers(0, 2**32 - 1))
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    print(f"Seed: {seed}")
+    return seed
 
 def relative_l2(pred, true):
     diff  = (pred - true).reshape(pred.shape[0], -1)
@@ -229,8 +240,7 @@ def plot_confusion_matrix(model, loader, device, out_dir):
 
 def main():
     args = get_args()
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    seed = init_seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nDevice: {device}")
@@ -239,6 +249,7 @@ def main():
         data_dir=args.data_dir,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        seed=seed,
     )
     model = TurbulenceUNet(
             in_ch=3,

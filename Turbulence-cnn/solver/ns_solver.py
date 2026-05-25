@@ -1,5 +1,6 @@
 import numpy as np
-import os 
+import os
+import argparse
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
@@ -9,6 +10,20 @@ from generate_data import run_simulation, plot_results
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SNAPSHOT_ROOT = os.path.join(PROJECT_ROOT, "snapshots")
 IMAGE_ROOT = os.path.join(PROJECT_ROOT, "img_out")
+
+
+def get_args():
+    p = argparse.ArgumentParser(description="Run NS solver and save snapshots")
+    p.add_argument("--seed", type=int, default=None)
+    return p.parse_args()
+
+
+def init_seed(seed):
+    if seed is None:
+        seed = int(np.random.default_rng().integers(0, 2**32 - 1))
+    np.random.seed(seed)
+    print(f"Seed: {seed}")
+    return seed
 
 class NSconfig:
     def __init__(self,Re=1000,N=64):
@@ -29,8 +44,9 @@ class NSconfig:
         self.t_end    = max(80.0, Re / 8.0)             # longer run for developed flow
         self.t_start_save = self.t_end * 0.30           # skip transient
         self.save_every = 10                            # save snapshot every N steps
-        self.n_poisson = 50                            # SOR iterations for pressure each step
-        self.sor_omega = 1.0                            # SOR over-relaxation
+        self.n_poisson = 400                           # pressure iterations each step
+        self.sor_omega = 1.7                           # SOR relaxation for RBGS
+        self.poisson_tol = 1e-6
  
         print(f"Config: Re={Re}, N={N}x{N}, nu={self.nu:.5f}, "
               f"t_end={self.t_end:.1f}, save after t={self.t_start_save:.1f}")
@@ -133,8 +149,13 @@ def step(u, v, p, cfg):
     # RHS: b = (rho/dt) * ∇·u*
     div_u_star = divergence(u_star, v_star, dx, dy)
     b = (rho / dt) * div_u_star
- 
-    p = solve_pressure_poisson(p, b, dx, dy, cfg.n_poisson, cfg.sor_omega)
+    b -= b.mean()
+
+    p = solve_pressure_poisson(
+        p, b, dx, dy,
+        cfg.n_poisson, cfg.sor_omega,
+        tol=getattr(cfg, "poisson_tol", 1e-6)
+    )
 
     # Prevent pressure drift
     p -= p.mean()
@@ -280,7 +301,9 @@ def plot_centerline(u, v, cfg):
     plt.close(fig)
  
 if __name__ == "__main__":
- 
+    args = get_args()
+    init_seed(args.seed)
+
     RE_VALUES = [100, 400, 1000]
  
     results = {}
