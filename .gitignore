@@ -40,3 +40,4 @@ __pycache__
 /Turbulence-cnn/runs
 /Turbulence-cnn/train-data
 /Turbulence-cnn/img_out
+!Turbulence-cnn/data
