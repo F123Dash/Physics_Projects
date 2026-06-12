@@ -2,7 +2,6 @@ import os, sys, time, argparse
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
