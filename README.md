@@ -113,15 +113,9 @@ Clone the repository:
 git clone https://github.com/F123Dash/Physics_Projects.git
 cd Physics_Projects
 ```
-Make a python venv
+Use poetry to install all the dependencies
 ```python
-python -m venv myenv
-```
-
-Install Python dependencies:
-
-```bash
-pip install numpy matplotlib scipy torch
+poetry install
 ```
 
 CUDA-enabled projects require:
