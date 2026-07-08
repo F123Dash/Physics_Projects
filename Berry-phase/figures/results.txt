@@ -1,0 +1,30 @@
+[berry] theta=0.3: exact=-0.140315, error M=20,50,400 = +2.148e-03, +3.447e-04, +5.389e-06; leading term at M=400 = +5.389e-06; random-gauge change 1.5e-15; reversed loop |g_rev + g| = 2.8e-17; |g_up + g_down| = 2.2e-16
+[berry] theta=0.9: exact=-1.188747, error M=20,50,400 = +9.896e-03, +1.578e-03, +2.464e-05; leading term at M=400 = +2.464e-05; random-gauge change 1.8e-15; reversed loop |g_rev + g| = 1.3e-15; |g_up + g_down| = 8.9e-16
+[berry] theta=1.5: exact=-2.919365, error M=20,50,400 = +1.837e-03, +2.914e-04, +4.547e-06; leading term at M=400 = +4.547e-06; random-gauge change 1.3e-15; reversed loop |g_rev + g| = 4.4e-16; |g_up + g_down| = 0.0e+00
+[berry] theta=2.2: exact=-4.990423, error M=20,50,400 = -9.987e-03, -1.592e-03, -2.485e-05; leading term at M=400 = -2.485e-05; random-gauge change 2.2e-15; reversed loop |g_rev + g| = 2.2e-16; |g_up + g_down| = 2.2e-16
+[berry] theta=2.9: exact=-6.191948, error M=20,50,400 = -1.430e-03, -2.296e-04, -3.590e-06; leading term at M=400 = -3.590e-06; random-gauge change 2.2e-15; reversed loop |g_rev + g| = 6.9e-16; |g_up + g_down| = 1.1e-16
+[chern] aligned: -1.000000000000, anti-aligned: +1.000000000000, aligned with random gauge on a 6x8 grid: -1.000000000000
+[integrator] theta=0.9, Omega/omega0=0.1, T=2pi/Omega, 1000 steps: |psi - psi_exact| = 8.23e-09
+[integrator] theta=0.9, Omega/omega0=0.1, T=2pi/Omega, 2000 steps: |psi - psi_exact| = 5.15e-10
+[integrator] theta=0.9, Omega/omega0=0.1, T=2pi/Omega, 4000 steps: |psi - psi_exact| = 3.22e-11
+[nonadiabatic] theta=0.5: log-log slope (eps<=0.007) = 1.0034; (gamma - gamma_B)/eps at eps=1e-3 = -0.36132, predicted -(pi/2) sin^2 theta = -0.36105; max |numerics - closed form| = 2.4e-08
+[nonadiabatic] theta=0.9: log-log slope (eps<=0.007) = 1.0028; (gamma - gamma_B)/eps at eps=1e-3 = -0.96434, predicted -(pi/2) sin^2 theta = -0.96384; max |numerics - closed form| = 6.1e-08
+[nonadiabatic] theta=2.0: log-log slope (eps<=0.007) = 0.9989; (gamma - gamma_B)/eps at eps=1e-3 = -1.29813, predicted -(pi/2) sin^2 theta = -1.29877; max |numerics - closed form| = 1.4e-07
+[aharonov-anandan] theta=0.9, Omega/omega0 in [0.02, 0.8]: max |gamma_AA + pi(1 - cos theta')| = 3.1e-07
+[tripod] at BASE=(1.3, 0.0, 0.0): ||[A_phi, A_S]||_F = 0.351231, analytic sqrt(2) cos(theta) sin^2(theta) = 0.351231
+[small loop] plane (0, 1), x=[0.7, 0.4, 0.3]: ||-i log U / area - F||_F at r=0.02,0.01,0.005 = 4.56e-05, 1.14e-05, 2.85e-06
+[small loop] plane (0, 2), x=[0.7, 0.4, 0.3]: ||-i log U / area - F||_F at r=0.02,0.01,0.005 = 1.97e-04, 4.93e-05, 1.23e-05
+[small loop] plane (1, 2), x=[0.7, 0.4, 0.3]: ||-i log U / area - F||_F at r=0.02,0.01,0.005 = 1.37e-02, 6.87e-03, 3.43e-03
+[wilson] loop b, M=250: ||polar(W)^dag - U|| = 5.45e-04, 1 - min singular value of W = 7.15e-02, U eigenphases = [-1.348999, 1.348999]
+[wilson] loop b, M=500: ||polar(W)^dag - U|| = 1.36e-04, 1 - min singular value of W = 3.64e-02, U eigenphases = [-1.349013, 1.349013]
+[wilson] loop b, M=1000: ||polar(W)^dag - U|| = 3.41e-05, 1 - min singular value of W = 1.84e-02, U eigenphases = [-1.349017, 1.349017]
+[wilson] loop b, M=2000: ||polar(W)^dag - U|| = 8.51e-06, 1 - min singular value of W = 9.23e-03, U eigenphases = [-1.349018, 1.349018]
+[evolution] loop b, T=200.0, smooth ramp: 1 - fidelity with U c0 = 6.91e-07, leakage out of dark subspace = 1.17e-10
+[ramp] linear ramp: 1 - F at T = [10, 20, 40, 80, 160, 320, 640]: 3.37e-01, 1.04e-01, 7.80e-03, 4.23e-04, 2.05e-04, 4.47e-05, 1.11e-05; fitted exponent (T >= 80) = -1.80
+[ramp] smooth ramp: 1 - F at T = [10, 20, 40, 80, 160, 320, 640]: 9.66e-01, 2.80e-01, 2.04e-02, 2.65e-05, 1.66e-06, 1.07e-07, 6.87e-09; fitted exponent (T >= 80) = -3.97
+[order] ||[U_a, U_b]||_F = 1.7697; Wilson-loop overlap |<U_b U_a c0 | U_a U_b c0>| = 0.2523
+[order] Abelian control (S fixed): ||[U_a, U_b']||_F = 7.4e-14, overlap = 1.000000000000
+[order] a then b: 1 - fidelity with Wilson prediction = 2.87e-08
+[order] b then a: 1 - fidelity with Wilson prediction = 2.65e-06
+[order] time-evolution overlap of the two final states (T=200.0 per loop) = 0.2508
+[order] overlap vs loop scale (Wilson, evolution): lambda=0.25: 1.0000, 1.0000, lambda=0.5: 0.9932, 0.9931, lambda=0.75: 0.8246, 0.8236, lambda=1.0: 0.2524, 0.2508
