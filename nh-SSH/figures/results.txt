@@ -1,0 +1,58 @@
+# python 3.14.7, numpy 2.4.6, scipy 1.17.1
+# BLAS/LAPACK: OpenBLAS 0.3.31.188.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64
+[spectra] t1=0.7, g=4/3, N=30: max|Im E_open| = 0.0e+00, max|Im E_bloch| = 0.667
+[skin] t1=0.7, N=12: right decay/cell=0.1591, 1/|s|=0.1562 (rel.err +0.019); left growth/cell=6.2866, |s|=6.4031 (rel.err -0.018)
+[skin] t1=0.7, N=20: right decay/cell=0.1575, 1/|s|=0.1562 (rel.err +0.008); left growth/cell=6.3499, |s|=6.4031 (rel.err -0.008)
+[skin] t1=1.0, N=12: right decay/cell=0.4508, 1/|s|=0.4472 (rel.err +0.008); left growth/cell=2.2183, |s|=2.2361 (rel.err -0.008)
+[skin] t1=1.0, N=20: right decay/cell=0.4490, 1/|s|=0.4472 (rel.err +0.004); left growth/cell=2.2272, |s|=2.2361 (rel.err -0.004)
+[skin] t1=1.4, N=12: right decay/cell=0.5959, 1/|s|=0.5957 (rel.err +0.000); left growth/cell=1.6783, |s|=1.6787 (rel.err -0.000)
+[skin] t1=1.4, N=20: right decay/cell=0.5958, 1/|s|=0.5957 (rel.err +0.000); left growth/cell=1.6785, |s|=1.6787 (rel.err -0.000)
+[exact] t1=0.8: max over N=2..20 of |E_eig - E_SSH(v',t2)| = 4.4e-15
+[exact] t1=1.0: max over N=2..20 of |E_eig - E_SSH(v',t2)| = 4.2e-15
+[exact] t1=1.4: max over N=2..20 of |E_eig - E_SSH(v',t2)| = 9.3e-15
+[brief table] t1=0.5: min|E| at N=[40] = ['8.01e-15']
+[brief table] t1=1.0: min|E| at N=[10, 20, 30] = ['2.38e-02', '1.24e-03', '6.59e-05']
+[brief table] t1=1.4: min|E| at N=[10, 20, 30] = ['3.37e-01', '2.70e-01', '2.52e-01']
+[minE] t1=0.5: N=10,20,30 -> ['3.32e-04', '9.23e-08', '2.57e-11']
+[minE] t1=1.0: N=10,20,30 -> ['2.38e-02', '1.24e-03', '6.59e-05']
+[minE] t1=1.1: N=10,20,30 -> ['7.25e-02', '1.65e-02', '4.27e-03']
+[minE] t1=1.3: N=10,20,30 -> ['2.39e-01', '1.67e-01', '1.45e-01']
+[minE] t1=1.4: N=10,20,30 -> ['3.37e-01', '2.70e-01', '2.52e-01']
+[minE] t1=1.0: slope of ln min|E| vs N (N=20..36) = -0.29390, ln(v'/t2) = -0.29389
+[minE] t1=1.1: slope of ln min|E| vs N (N=20..36) = -0.13462, ln(v'/t2) = -0.13358
+[transition] g=0.5000: N=20/30 ratio crosses the critical value at t1 = 1.0308; sqrt(t2^2+g^2/4) = 1.0308; Bloch closings [0.75, 1.25]
+[transition] g=1.3333: N=20/30 ratio crosses the critical value at t1 = 1.2019; sqrt(t2^2+g^2/4) = 1.2019; Bloch closings [0.3333, 1.6667]
+[transition] g=2.0000: N=20/30 ratio crosses the critical value at t1 = 1.4142; sqrt(t2^2+g^2/4) = 1.4142; Bloch closings [0.0, 2.0]
+[transition] g=2.6000: N=20/30 ratio crosses the critical value at t1 = 1.6401; sqrt(t2^2+g^2/4) = 1.6401; Bloch closings [0.3, 2.3]
+[phase] min|E| from the even chain, N=30; P from the odd chain, N=31 A-sites
+[phase] grid 201x151: max |E_eig - E_exact| = 1.0e-08, but min|E| is off by more than 2x at 90 of 26308 points with exact min|E| > 1e-12 (worst: eig 1e-17 vs exact 2e-10)
+[phase] g=0.500: P(N=31) = 1/2 at t1 = [1.028]; OBC prediction [1.031]
+[phase] g=1.340: P(N=31) = 1/2 at t1 = [1.201]; OBC prediction [1.204]
+[phase] g=2.000: P(N=31) = 1/2 at t1 = [0.045, 1.412]; OBC prediction [0.0, 1.414]
+[phase] g=2.600: P(N=31) = 1/2 at t1 = [0.832, 1.638]; OBC prediction [0.831, 1.64]
+[density] odd chain N=20, t1=1.0: r_R=-0.3333, r_L=-1.6667, r_L*r_R=0.5556; max|<Pi_n> - x^n/sum| = 3.4e-13, max|Im<Pi_n>| = 0.0e+00
+[density] even chain N=20, t1=1.0: max|L*R - psi_SSH^2| = 9.6e-13 (A edge), 2.8e-12 (B edge)
+[P] g=1.3333: OBC transitions [1.2019], Bloch gap closings [0.3333, 1.6667]
+    N=21: P at OBC points = [0.4762]; P at Bloch points = [0.9643, 0.0357]
+    N=41: P at OBC points = [0.4878]; P at Bloch points = [0.9817, 0.0183]
+    N=161: P at OBC points = [0.4969]; P at Bloch points = [0.9953, 0.0047]
+    N=1001: P at OBC points = [0.4995]; P at Bloch points = [0.9993, 0.0007]
+    max |P_eig - P_closed form| for N=11,21,31: 6.6e-10
+[P] g=3.0000: OBC transitions [1.118, 1.8028], Bloch gap closings [0.5, 2.5]
+    N=21: P at OBC points = [0.4762, 0.4762]; P at Bloch points = [-0.0159, 0.0159]
+    N=41: P at OBC points = [0.4878, 0.4878]; P at Bloch points = [-0.0081, 0.0081]
+    N=161: P at OBC points = [0.4969, 0.4969]; P at Bloch points = [-0.0021, 0.0021]
+    N=1001: P at OBC points = [0.4995, 0.4995]; P at Bloch points = [-0.0003, 0.0003]
+    max |P_eig - P_closed form| for N=11,21,31: 3.5e-05
+[P] g=3 at x = r_L* r_R = -1: P(N=20) = nan, P(N=21) = 0.4762 (even N: <L|R> = 0, P undefined)
+[accuracy] t1=1.4, |s|=1.6787: first N with eig error > 1e-10: 40; N=30: 8.0e-15, N=36: 7.1e-15, N=38: 1.1e-12, N=40: 1.0e-10, N=60: 2.2e-10, N=80: 2.1e-06, N=100: 3.4e-05
+    cond(R): N=10: 1.8e+02 (|s|^N=1.8e+02), N=20: 3.3e+04 (|s|^N=3.2e+04), N=30: 5.9e+06 (|s|^N=5.6e+06), N=40: 1.0e+09 (|s|^N=1.0e+09), N=60: 3.3e+13 (|s|^N=3.2e+13)
+[accuracy] t1=1.0, |s|=2.2361: first N with eig error > 1e-10: 42; N=30: 3.8e-15, N=36: 2.4e-12, N=38: 3.7e-11, N=40: 1.0e-10, N=60: 3.2e-09, N=80: 8.7e-04, N=100: 9.4e-03
+    cond(R): N=10: 4.2e+03 (|s|^N=3.1e+03), N=20: 1.7e+07 (|s|^N=9.8e+06), N=30: 6.4e+10 (|s|^N=3.1e+10), N=40: 2.3e+14 (|s|^N=9.5e+13), N=60: 4.3e+21 (|s|^N=9.3e+20)
+[accuracy] t1=0.7, |s|=6.4031: first N with eig error > 1e-10: 38; N=30: 8.7e-14, N=36: 1.3e-13, N=38: 5.0e-08, N=40: 3.7e-05, N=60: 2.0e-03, N=80: 3.3e-03, N=100: 4.9e-02
+    cond(R): N=10: 2.9e+08 (|s|^N=1.2e+08), N=20: 4.2e+16 (|s|^N=1.3e+16), N=30: 1.3e+24 (|s|^N=1.6e+24), N=40: 1.4e+30 (|s|^N=1.8e+32), N=60: 2.2e+36 (|s|^N=2.4e+48)
+[accuracy] t1=1.0: max|Im E_eig| N=40: 0e+00, N=60: 0e+00, N=70: 0e+00, N=80: 0e+00, N=100: 9e-03
+[accuracy] t1=0.7: max|Im E_eig| N=40: 0e+00, N=60: 0e+00, N=70: 2e-03, N=80: 3e-03, N=100: 5e-02
+[accuracy] negative control g=0, t1=1: max eig error N=4..100 = 2.9e-14
+[accuracy] t1=0.7: N=37 (74 sites) error 6.0e-14; N=38 (76 sites) error 5.0e-08
+[mpmath] N=40, t1=0.7, 60 digits (18 s): |E_mp - E_exact| = 8.9e-16, max|Im E_mp| = 2e-60, |E_eig - E_mp| = 3.7e-05
