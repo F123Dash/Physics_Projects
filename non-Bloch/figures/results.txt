@@ -1,0 +1,63 @@
+# python 3.14.7, numpy 2.4.6, scipy 1.17.1
+# BLAS/LAPACK: OpenBLAS 0.3.31.188.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64
+[HN] t_R=1.5, t_L=0.5: theta-scan |beta| in [1.732050807568876, 1.732050807568879], sqrt(t_R/t_L) = 1.732050807568877, max rel. dev 9e-16
+[HN] t_R=0.4, t_L=1.0: theta-scan |beta| in [0.632455532033675, 0.632455532033676], sqrt(t_R/t_L) = 0.632455532033676, max rel. dev 1e-15
+[HN] t_R=2.0, t_L=0.1: theta-scan |beta| in [4.472135954999574, 4.472135954999582], sqrt(t_R/t_L) = 4.472135954999580, max rel. dev 1e-15
+[HN] N=30: max|E_eig - 2 sqrt(t_R t_L) cos(pi m/(N+1))| = 7e-11, max root gap of exact E_m = 7e-16
+[HN] N=12: per-site growth of summed eigenvector weight = 1.7321, r = 1.7321
+[HN] N=20: per-site growth of summed eigenvector weight = 1.7321, r = 1.7321
+[HN] N=30: per-site growth of summed eigenvector weight = 1.7321, r = 1.7321
+[SSH] t1=0.3: theta-scan |beta| in [0.615881762051, 0.615881762051], sqrt|(t1-g/2)/(t1+g/2)| = 0.615881762051
+[SSH] t1=0.7: theta-scan |beta| in [0.156173761889, 0.156173761889], sqrt|(t1-g/2)/(t1+g/2)| = 0.156173761889
+[SSH] t1=1.0: theta-scan |beta| in [0.447213595500, 0.447213595500], sqrt|(t1-g/2)/(t1+g/2)| = 0.447213595500
+[SSH] t1=1.4: theta-scan |beta| in [0.595683397181, 0.595683397181], sqrt|(t1-g/2)/(t1+g/2)| = 0.595683397181
+[SSH] t1=2.0: theta-scan |beta| in [0.707106781187, 0.707106781187], sqrt|(t1-g/2)/(t1+g/2)| = 0.707106781187
+[SSH] t1=0.7, N=40: E-scan over 78 bulk OBC eigenvalues, max | |beta_i|/r - 1 | = 7e-16
+[SSH] t1=1.0, N=40: E-scan over 78 bulk OBC eigenvalues, max | |beta_i|/r - 1 | = 8e-16
+[SSH] t1=1.4, N=40: E-scan over 80 bulk OBC eigenvalues, max | |beta_i|/r - 1 | = 9e-16
+[SSH] t1=0.7: decay factor per cell of bulk right eigenvectors (project 3, N=12/20) = 0.1591/0.1575; r = 0.1562
+[winding] g=1.3333: nu_nonBloch values [0.0, 1.0], nu_Bloch values [0.0, 0.5, 1.0]; edge count (N=200, |E|<1e-8) != nu_nonBloch at 13 of 501 points, all within 0.062 of a transition; OBC transitions [1.2019]
+    Bloch winding != nu_nonBloch at 267 points
+[winding] g=3.0000: nu_nonBloch values [0.0, 1.0], nu_Bloch values [0.0, 0.5]; edge count (N=200, |E|<1e-8) != nu_nonBloch at 24 of 500 points, all within 0.072 of a transition; OBC transitions [1.118, 1.8028]
+    Bloch winding != nu_nonBloch at 398 points
+[winding] spot table (t1, g): nu_Bloch, nu_nonBloch, edge pairs N=200, min|E| N=200
+    (0.2, 1.3333): +1.000000, +1.000000, 1, 3.1e-17
+    (0.7, 1.3333): +0.500000, +1.000000, 1, 3.2e-17
+    (1.0, 1.3333): +0.500000, +1.000000, 1, 2.8e-16
+    (1.3, 1.3333): +0.500000, +0.000000, 0, 1.2e-01
+    (2.0, 1.3333): +0.000000, +0.000000, 0, 8.9e-01
+    (0.9, 3.0000): +0.500000, -0.000000, 0, 6.7e-01
+    (1.4, 3.0000): +0.500000, +1.000000, 1, 4.5e-16
+    (2.2, 3.0000): +0.500000, +0.000000, 0, 6.1e-01
+[winding] g=0, t1=0.5: nu_nonBloch = +1.000000, project-1 winding = +1.000000, GBZ radius = 1.0
+[winding] g=0, t1=1.5: nu_nonBloch = +0.000000, project-1 winding = +0.000000, GBZ radius = 1.0
+[winding] t1=1, g=4/3: zero of h1 at |beta| = 0.6000, zero of h2 at 0.3333, GBZ r = 0.4472, BZ r = 1
+[range2] t_-2, t_-1, t_1, t_2 = (0.3, 1.0, 0.5, 0.4): GBZ |beta| in [1.0719, 1.2786], max/min = 1.1929; 14050 points from 6000 theta values; gauge rho = sqrt(min max) = 1.1707
+[range2] cusp at beta = 0.1940+1.2638j (largest |beta|): E = -0.5833, root moduli there [0.3585, 1.2786, 1.2786, 1.2794] (beta_4 within 0.1%: the cusp sits at the junction of the arcs)
+[range2] N=80: max root gap 3.16e-03, max distance to E(GBZ) 2.0e-03, to E(unit circle) 0.44
+[finite size] N=10: 6/10 eigenvalues with N*sep > 3; max gap there 1.140e-02 (ln|C|/(N+1) max 1.151e-02); median |(N+1) gap - ln|C|| = 9e-15; max E-distance 3.5e-03; over all eigenvalues: max gap 6.74e-02, max E-distance 5.3e-02
+[finite size] N=14: 12/14 eigenvalues with N*sep > 3; max gap there 1.775e-02 (ln|C|/(N+1) max 1.684e-02); median |(N+1) gap - ln|C|| = 8e-05; max E-distance 1.0e-02; over all eigenvalues: max gap 1.77e-02, max E-distance 1.4e-02
+[finite size] N=20: 17/20 eigenvalues with N*sep > 3; max gap there 1.203e-02 (ln|C|/(N+1) max 1.194e-02); median |(N+1) gap - ln|C|| = 2e-14; max E-distance 6.9e-03; over all eigenvalues: max gap 1.20e-02, max E-distance 8.2e-03
+[finite size] N=28: 26/28 eigenvalues with N*sep > 3; max gap there 8.780e-03 (ln|C|/(N+1) max 8.803e-03); median |(N+1) gap - ln|C|| = 6e-08; max E-distance 5.5e-03; over all eigenvalues: max gap 2.85e-02, max E-distance 2.3e-02
+[finite size] N=40: 38/40 eigenvalues with N*sep > 3; max gap there 6.210e-03 (ln|C|/(N+1) max 6.210e-03); median |(N+1) gap - ln|C|| = 2e-10; max E-distance 3.9e-03; over all eigenvalues: max gap 6.21e-03, max E-distance 3.9e-03
+[finite size] N=56: 53/56 eigenvalues with N*sep > 3; max gap there 4.480e-03 (ln|C|/(N+1) max 4.480e-03); median |(N+1) gap - ln|C|| = 1e-13; max E-distance 2.9e-03; over all eigenvalues: max gap 4.48e-03, max E-distance 2.9e-03
+[finite size] N=80: 78/80 eigenvalues with N*sep > 3; max gap there 3.161e-03 (ln|C|/(N+1) max 3.161e-03); median |(N+1) gap - ln|C|| = 1e-13; max E-distance 2.0e-03; over all eigenvalues: max gap 3.16e-03, max E-distance 2.0e-03
+[finite size] N=113: 111/113 eigenvalues with N*sep > 3; max gap there 2.252e-03 (ln|C|/(N+1) max 2.252e-03); median |(N+1) gap - ln|C|| = 2e-13; max E-distance 1.4e-03; over all eigenvalues: max gap 2.25e-03, max E-distance 1.4e-03
+[finite size] N=160: 158/160 eigenvalues with N*sep > 3; max gap there 1.595e-03 (ln|C|/(N+1) max 1.595e-03); median |(N+1) gap - ln|C|| = 1e-12; max E-distance 1.0e-03; over all eigenvalues: max gap 1.80e-03, max E-distance 1.5e-03
+[finite size] fitted exponents for N >= 40: max gap (N*sep>3) -0.980, max E-distance (N*sep>3) -0.980, max gap over all eigenvalues -0.910, max E-distance over all -0.760; prediction -1
+[deform] t_2 scan: min of max/min |beta| = 1.000000000000 at t_2 = 0.0750; predicted circle at t_2 = t_-2 (t_1/t_-1)^2 = 0.075, radius 1.414214 (GBZ there: [1.4142135624, 1.4142135624])
+    t_2=0.00: |beta| in [0.8435, 1.6513], ratio 1.9577
+    t_2=0.20: |beta| in [1.2262, 1.5438], ratio 1.2590
+    t_2=0.40: |beta| in [1.0719, 1.2784], ratio 1.1927
+    t_2=0.80: |beta| in [0.8689, 1.0468], ratio 1.2048
+    t_2=1.00: |beta| in [0.8129, 0.9803], ratio 1.2060
+[accuracy] N=40: |E_plain - E_gauged| = 2.5e-13, |E_gauged(1.03 rho) - E_gauged(rho)| = 8.4e-15
+[accuracy] N=60: |E_plain - E_gauged| = 1.2e-11, |E_gauged(1.03 rho) - E_gauged(rho)| = 1.3e-14
+[accuracy] N=75: |E_plain - E_gauged| = 6.9e-10, |E_gauged(1.03 rho) - E_gauged(rho)| = 2.9e-14
+[accuracy] N=80: |E_plain - E_gauged| = 3.2e-10, |E_gauged(1.03 rho) - E_gauged(rho)| = 4.9e-14
+[accuracy] N=100: |E_plain - E_gauged| = 2.7e-07, |E_gauged(1.03 rho) - E_gauged(rho)| = 1.2e-13
+[accuracy] N=120: |E_plain - E_gauged| = 1.7e-05, |E_gauged(1.03 rho) - E_gauged(rho)| = 9.1e-13
+[accuracy] N=160: |E_plain - E_gauged| = 3.9e-02, |E_gauged(1.03 rho) - E_gauged(rho)| = 2.6e-10
+[accuracy] N=200: |E_plain - E_gauged| = 1.2e-01, |E_gauged(1.03 rho) - E_gauged(rho)| = 1.2e-08
+[accuracy] first N (step 5) with |E_plain - E_gauged| > 1e-10: 65; with gauge-gauge > 1e-10: 160
+[accuracy] N=160: plain eig max distance to E(GBZ) 3.6e-02, gauged 1.5e-03
