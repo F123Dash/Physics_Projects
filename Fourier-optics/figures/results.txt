@@ -1,0 +1,88 @@
+# python 3.14.7, numpy 2.4.6, scipy 1.17.1
+# BLAS/LAPACK: OpenBLAS 0.3.31.188.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64
+# lambda = 0.5 um, w0 = 10.0 um, zR = 628.3185 um, eps = 1/(k w0)^2 = 6.3326e-05
+[prop] random field with |f| < 0.9/lambda, z = 10, 1e3, 1e5 um: max |P(z)/P(0) - 1| = 2e-16 (bound 1e-10)
+[prop] plane wave at 69.6 deg: max |E - E0 exp(i kz z)| = 2e-14
+[gauss] N = 512, dx = 0.5 um, window 256 um; z in [-3, 3] zR, 25 points
+[gauss] max |w / w0 sqrt(1 + zeta^2) - 1| on 0..3 zR = 1.14e-04
+[gauss] max |w / w_nonparaxial - 1| = 2e-11
+[gauss] max |1/R_fit / (z/(z^2 + zR^2)) - 1| = 1.57e-04
+[gauss] max |(kz - arg E(0,z)) - arctan(z/zR)| = 3.16e-05 rad
+[gauss] max |(kz - arg E(0,z)) - Gouy_nonparaxial| = 1e-08 rad
+[gauss] max |E(0,z)/E(0,0) - Hankel integral| = 1e-09
+[gauss] Gouy phase from z = -3 zR to +3 zR: 2.498031 rad = 0.795148 pi (2 arctan 3 = 0.795167 pi; pi as zeta -> infinity)
+[LG] (p, l) = (0, +1): max |Gouy - (2p+|l|+1) arctan(z/zR)| on [-3, 3] zR = 2.85e-04 rad
+[LG] (p, l) = (0, +3): max |Gouy - (2p+|l|+1) arctan(z/zR)| on [-3, 3] zR = 9.50e-04 rad
+[LG] (p, l) = (1, +1): max |Gouy - (2p+|l|+1) arctan(z/zR)| on [-3, 3] zR = 1.14e-03 rad
+[LG] (p, l) = (2, -2): max |Gouy - (2p+|l|+1) arctan(z/zR)| on [-3, 3] zR = 3.42e-03 rad
+[LG] overlap phase beyond Gouy vs -zeta eps <s^2>/4, and 1 - F vs (zeta eps/4)^2 Var(s^2), at zeta = 1, 3:
+    (0,+1) zeta=1: phase -9.5013e-05 (pred -9.4989e-05); 1-F 2.1072e-08 (pred 2.1053e-08); <s^2> = 6
+    (0,+1) zeta=3: phase -2.8504e-04 (pred -2.8497e-04); 1-F 1.8964e-07 (pred 1.8948e-07); <s^2> = 6
+    (0,+3) zeta=1: phase -3.1675e-04 (pred -3.1663e-04); 1-F 1.1042e-07 (pred 1.1028e-07); <s^2> = 20
+    (0,+3) zeta=3: phase -9.5025e-04 (pred -9.4989e-04); 1-F 9.9375e-07 (pred 9.9251e-07); <s^2> = 20
+    (1,+1) zeta=1: phase -3.8012e-04 (pred -3.7995e-04); 1-F 1.8671e-07 (pred 1.8647e-07); <s^2> = 24
+    (1,+1) zeta=3: phase -1.1404e-03 (pred -1.1399e-03); 1-F 1.6804e-06 (pred 1.6782e-06); <s^2> = 24
+    (2,-2) zeta=1: phase -1.1407e-03 (pred -1.1399e-03); 1-F 1.3500e-06 (pred 1.3474e-06); <s^2> = 72
+    (2,-2) zeta=3: phase -3.4221e-03 (pred -3.4196e-03); 1-F 1.2150e-05 (pred 1.2127e-05); <s^2> = 72
+[gauss] width residual at 3 zR = 1.1402e-04; first-order prediction (9/10)(2 eps) = 1.1399e-04
+[gauss] on-axis Gouy residual at 0.5 zR from the Hankel integral = 3.0396e-05 rad
+[LG] N = 1024, dx = 0.5 um; winding = sum of wrapped phase steps / 2 pi on a square loop of half-width 0.5 w(z)
+    (0,+1): winding at z = 0, zR, 3zR = +1.000000000000, +1.000000000000, +1.000000000000; <Lz>/hbar at 0, 3zR = +1.000000000000, +1.000000000000; 1 - F(zR) = 2.1e-08
+    (0,+3): winding at z = 0, zR, 3zR = +3.000000000000, +3.000000000000, +3.000000000000; <Lz>/hbar at 0, 3zR = +3.000000000000, +3.000000000000; 1 - F(zR) = 1.1e-07
+    (1,+1): winding at z = 0, zR, 3zR = +1.000000000000, +1.000000000000, +1.000000000000; <Lz>/hbar at 0, 3zR = +1.000000000000, +1.000000000000; 1 - F(zR) = 1.9e-07
+    (2,-2): winding at z = 0, zR, 3zR = -2.000000000000, -2.000000000000, -2.000000000000; <Lz>/hbar at 0, 3zR = -2.000000000000, -2.000000000000; 1 - F(zR) = 1.3e-06
+[LG] negative controls: loop off the core (centre +30 um) on LG_1^+1: +3.5e-16; Gaussian: +0.0e+00
+[LG] <Lz>/hbar of sqrt(.7) LG_0^1 + sqrt(.3) LG_0^-2 = +0.100000000000 (0.7 - 0.6 = 0.1)
+[rot] (LG_0^0 + LG_0^2)/sqrt2: orientation of the cos 2(phi - theta) lobes vs arctan(z/zR), z in [-3, 3] zR
+[rot]   paraxial TF: max |theta - arctan| = 2e-16; exact TF: 9.9e-05 rad (eps = 6.3e-05); total turn -3..3 zR = 143.138 deg
+[talbot] d = 10.0 um: z_T exact = 399.7498 um, paraxial 2d^2/lambda = 400.0000 um
+[talbot] d = 10.0 um (d/lambda = 20): exact 399.74984, paraxial 400.00000 um; cosine grating revival peak (11 samples, 0.002 z_T apart, around 2d^2/lambda) at 399.749846 um, |peak - z_T| = 2e-06 um, F(z_T) = 1.000000000000000, F(2d^2/lambda) = 0.99999847
+[talbot]   binary 50% grating, M = 512 samples per period: F(z_T exact) = 0.8661; paraxial TF at 2d^2/lambda F = 1.000000000000000; best revival in 0.9..1.1 z_T at 394.079 um, F = 0.9514; half-Talbot first-harmonic shift = 0.500000000000 d
+[talbot]   binary: fidelity at z_T/2 with the grating shifted by d/2 = 0.9143; power in evanescent orders = 0.0101
+[talbot] d = 2.0 um (d/lambda = 4): exact 15.74597, paraxial 16.00000 um; cosine grating revival peak (11 samples, 0.002 z_T apart, around 2d^2/lambda) at 15.745862 um, |peak - z_T| = 1e-04 um, F(z_T) = 1.000000000000000, F(2d^2/lambda) = 0.99898601
+[talbot]   binary 50% grating, M = 512 samples per period: F(z_T exact) = 0.8194; paraxial TF at 2d^2/lambda F = 1.000000000000000; best revival in 0.9..1.1 z_T at 16.242 um, F = 0.9411; half-Talbot first-harmonic shift = 0.500000000000 d
+[talbot]   binary: fidelity at z_T/2 with the grating shifted by d/2 = 0.9063; power in evanescent orders = 0.0497
+[defect] binary grating 1 - F(z_T), FFT on propagating orders vs series sum, d/lambda = 5..320: max diff = 4e-13
+[defect]   d/lambda =       4: 1 - F = 1.3771e-01, asymptote 0.5137 sqrt(lambda/d) = 2.5684e-01, ratio 0.5362
+[defect]   d/lambda =      20: 1 - F = 1.2503e-01, asymptote 0.5137 sqrt(lambda/d) = 1.1486e-01, ratio 1.0885
+[defect]   d/lambda =     100: 1 - F = 4.4674e-02, asymptote 0.5137 sqrt(lambda/d) = 5.1368e-02, ratio 0.8697
+[defect]   d/lambda =    1000: 1 - F = 1.5101e-02, asymptote 0.5137 sqrt(lambda/d) = 1.6244e-02, ratio 0.9297
+[defect]   d/lambda =   10000: 1 - F = 5.0939e-03, asymptote 0.5137 sqrt(lambda/d) = 5.1368e-03, ratio 0.9917
+[defect]   d/lambda =  100000: 1 - F = 1.6244e-03, asymptote 0.5137 sqrt(lambda/d) = 1.6244e-03, ratio 1.0000
+[defect]   d/lambda = 1000000: 1 - F = 5.1286e-04, asymptote 0.5137 sqrt(lambda/d) = 5.1368e-04, ratio 0.9984
+[defect] fitted exponent of 1 - F vs d/lambda for d/lambda >= 1000: -0.4948 (predicted -1/2)
+[sampling] 1D slit a = 20.0 um, N = 1024, dx = 0.5 um (= lambda), L = 512.0 um; reference: N = 65536 (alias-free to 28378 um); error = rel. L2 on |x| < L/4
+[sampling] z_c = (L/2) sqrt((2dx/lambda)^2 - 1) = 443.4 um unpadded, 886.8 um padded
+[sampling] pad=False: first scanned z where the unlimited error exceeds 1.5x the band-limited one: 526 um (previous sample 456 um)
+[sampling] pad=True : first scanned z where the unlimited error exceeds 1.5x the band-limited one: 1243 um (previous sample 1077 um)
+[sampling]   bandlimit=False pad=False: error at z = 300 / 4000 / 8000 um = 1.4e-03 / 1.3e-01 / 1.9e-01
+[sampling]   bandlimit=True  pad=False: error at z = 300 / 4000 / 8000 um = 1.4e-03 / 1.5e-02 / 2.1e-02
+[sampling]   bandlimit=False pad=True : error at z = 300 / 4000 / 8000 um = 3.2e-04 / 6.9e-02 / 1.0e-01
+[sampling]   bandlimit=True  pad=True : error at z = 300 / 4000 / 8000 um = 3.2e-04 / 5.0e-04 / 7.0e-03
+[grid] window scan at z = 3 zR (w = 31.62 um), dx = 0.5 um: |w_num / w_nonparaxial - 1| vs (L/2)/w
+    (L/2)/w =  0.38: unpadded 5.6e-01, padded 6.5e-01
+    (L/2)/w =  0.44: unpadded 4.9e-01, padded 5.9e-01
+    (L/2)/w =  0.51: unpadded 4.2e-01, padded 4.1e-01
+    (L/2)/w =  0.63: unpadded 2.7e-01, padded 3.4e-01
+    (L/2)/w =  0.76: unpadded 2.0e-01, padded 2.4e-01
+    (L/2)/w =  0.89: unpadded 2.3e-01, padded 1.7e-01
+    (L/2)/w =  1.01: unpadded 9.3e-02, padded 1.2e-01
+    (L/2)/w =  1.26: unpadded 4.1e-02, padded 4.3e-02
+    (L/2)/w =  1.52: unpadded 2.0e-02, padded 1.2e-02
+    (L/2)/w =  2.02: unpadded 4.4e-04, padded 4.5e-04
+    (L/2)/w =  3.04: unpadded 6.5e-09, padded 2.5e-08
+    (L/2)/w =  4.05: unpadded 2.2e-11, padded 2.2e-11
+[grid] sampling scan, L = 512.0 um, paraxial TF, Gaussian at z = zR: rel. L2 field error vs dx/w0 (and sqrt of the power fraction beyond Nyquist)
+    dx/w0 = 0.05: error 4.5e-13, sqrt(P_beyond) 0.0e+00
+    dx/w0 = 0.10: error 4.6e-13, sqrt(P_beyond) 1.6e-108
+    dx/w0 = 0.15: error 4.4e-13, sqrt(P_beyond) 6.5e-49
+    dx/w0 = 0.20: error 4.9e-13, sqrt(P_beyond) 5.2e-28
+    dx/w0 = 0.25: error 3.7e-13, sqrt(P_beyond) 2.5e-18
+    dx/w0 = 0.30: error 7.0e-13, sqrt(P_beyond) 4.8e-13
+    dx/w0 = 0.35: error 7.4e-10, sqrt(P_beyond) 7.5e-10
+    dx/w0 = 0.40: error 8.8e-08, sqrt(P_beyond) 9.0e-08
+    dx/w0 = 0.50: error 2.5e-05, sqrt(P_beyond) 2.6e-05
+    dx/w0 = 0.60: error 5.6e-04, sqrt(P_beyond) 5.7e-04
+    dx/w0 = 0.70: error 3.7e-03, sqrt(P_beyond) 3.8e-03
+    dx/w0 = 0.80: error 1.3e-02, sqrt(P_beyond) 1.3e-02
+    dx/w0 = 1.00: error 5.5e-02, sqrt(P_beyond) 5.8e-02
