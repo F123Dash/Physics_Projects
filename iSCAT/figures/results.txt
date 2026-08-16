@@ -1,0 +1,111 @@
+# python 3.14.7, numpy 2.4.6, scipy 1.17.1
+# BLAS/LAPACK: OpenBLAS 0.3.31.188.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64
+# lambda0 = 532.0 nm, n_glass = 1.52, n_water = 1.33, NA = 1.4, k = 0.015708 /nm, lambda_m = 400.00 nm
+# polystyrene n = 1.59, gold n = 0.5439 + 2.2309i (Johnson & Christy, interpolated); L_PS = 0.12516, L_Au = 1.8431+1.7895j
+# reference r = 0.06667, |r|^2 = 0.00444; t = 1.06667, t' = 0.93333; pixel = 60.0 nm
+[mie] Bohren-Huffman example m = 1.55, x = 5.21282: Q_ext = Q_sca = 3.10543, Q_back = 2.92534 (BHMIE listing 3.10543, 2.92534)
+[mie] max relative difference from miepython 3.3.0 (Q_ext, Q_sca, Q_back; 4 indices x 40 sizes, x = 0.01..50): 4.7e-07; ours vs 60 extra terms (Q_sca): < 1e-11
+[mie] polystyrene: sigma_sca departs from Rayleigh by 2% at a = 19.99 nm (x = 0.3140), by 10% at a = 43.61 nm (x = 0.6850)
+[mie] polystyrene: |f_back| departs from Rayleigh by 2% at a = 16.13 nm (x = 0.2533), by 10% at a = 36.09 nm (x = 0.5668)
+[mie] polystyrene: B = -0.19975 (sigma), C = -0.31174+0.00000j (f_back); x^2-law 10% radius for sigma = 45.04 nm
+[mie] gold: sigma_sca departs from Rayleigh by 2% at a = 5.89 nm (x = 0.0925), by 10% at a = 14.43 nm (x = 0.2267)
+[mie] gold: |f_back| departs from Rayleigh by 2% at a = 8.78 nm (x = 0.1379), by 10% at a = 36.82 nm (x = 0.5784)
+[mie] gold: B = +2.54893 (sigma), C = 1.22762+1.40379j (f_back); x^2-law 10% radius for sigma = 12.61 nm
+[mie] gold: sigma_Mie/sigma_Rayleigh peaks at 1.1607 at a = 22.8 nm
+[mie] |L_Au / L_PS| = 20.53; |f_back| Mie/Rayleigh for polystyrene at a = 20 nm: 0.9693
+[mie] Rayleigh a^6 law error, polystyrene: at lambda_m/20 = 20.00 nm error -2.0025%; at lambda0/20 = 26.60 nm error -3.5826%
+[radius] polystyrene, h = 20 nm, focus on interface: log-log slope on a = 10-40 nm: Rayleigh interference 3.0000, scattering 6.0000; Mie interference 2.9273, scattering 5.8546
+[radius] polystyrene: |s|^2 overtakes 2|s| (|s/r| = 2) at a = 149.2 nm (Mie)
+[radius] gold, h = 20 nm, focus on interface: log-log slope on a = 10-40 nm: Rayleigh interference 3.0000, scattering 6.0000; Mie interference 2.9488, scattering 5.8976
+[radius] gold: |s|^2 overtakes 2|s| (|s/r| = 2) at a = 28.1 nm (Mie)
+[height] polystyrene a = 20.0 nm, NA 1.4, focus on interface: first dark fringe at h = 60 nm, C(h = a) = -2.9516e-02, max |C| = 6.1706e-02
+[height] gold a = 20.0 nm, NA 1.4, focus on interface: first dark fringe at h = 24 nm, C(h = a) = -9.1950e-01, max |C| = 1.4526e+00
+[height] arg(alpha_Au/alpha_PS) = 0.9582 rad: gold fringes lead by this phase
+[height] NA = 0.20: vectorial peak period (fit h = 20-220 nm) = 200.57 nm = 1.0028 lambda_m/2; scalar 2 lambda_m/(3+c) = 200.57 nm
+[height] NA = 0.30: vectorial peak period (fit h = 20-220 nm) = 201.29 nm = 1.0065 lambda_m/2; scalar 2 lambda_m/(3+c) = 201.30 nm
+[height] NA = 0.40: vectorial peak period (fit h = 20-220 nm) = 202.32 nm = 1.0116 lambda_m/2; scalar 2 lambda_m/(3+c) = 202.34 nm
+[height] NA = 0.60: vectorial peak period (fit h = 20-220 nm) = 205.42 nm = 1.0271 lambda_m/2; scalar 2 lambda_m/(3+c) = 205.53 nm
+[height] NA = 0.80: vectorial peak period (fit h = 20-220 nm) = 210.18 nm = 1.0509 lambda_m/2; scalar 2 lambda_m/(3+c) = 210.59 nm
+[height] NA = 1.00: vectorial peak period (fit h = 20-220 nm) = 217.26 nm = 1.0863 lambda_m/2; scalar 2 lambda_m/(3+c) = 218.62 nm
+[height] NA = 1.10: vectorial peak period (fit h = 20-220 nm) = 222.08 nm = 1.1104 lambda_m/2; scalar 2 lambda_m/(3+c) = 224.59 nm
+[height] NA = 1.20: vectorial peak period (fit h = 20-220 nm) = 228.18 nm = 1.1409 lambda_m/2; scalar 2 lambda_m/(3+c) = 233.15 nm
+[height] NA = 1.25: vectorial peak period (fit h = 20-220 nm) = 231.92 nm = 1.1596 lambda_m/2; scalar 2 lambda_m/(3+c) = 239.41 nm
+[height] NA = 1.30: vectorial peak period (fit h = 20-220 nm) = 236.28 nm = 1.1814 lambda_m/2; scalar 2 lambda_m/(3+c) = 249.13 nm
+[height] NA = 1.33: vectorial peak period (fit h = 20-220 nm) = 239.17 nm = 1.1959 lambda_m/2; scalar 2 lambda_m/(3+c) = 266.67 nm
+[height] NA = 1.36: vectorial peak period (fit h = 20-220 nm) = 240.16 nm = 1.2008 lambda_m/2
+[height] NA = 1.40: vectorial peak period (fit h = 20-220 nm) = 240.12 nm = 1.2006 lambda_m/2
+[height] NA = 1.45: vectorial peak period (fit h = 20-220 nm) = 239.05 nm = 1.1952 lambda_m/2
+[height] NA = 0.20: window-summed (W = 3000 nm) period = 1.000451 lambda_m/2; predicted 1 + 1/(k W)^2 = 1.000450
+[height] NA = 0.60: window-summed (W = 3000 nm) period = 1.000451 lambda_m/2; predicted 1 + 1/(k W)^2 = 1.000450
+[height] NA = 1.10: window-summed (W = 3000 nm) period = 1.000451 lambda_m/2; predicted 1 + 1/(k W)^2 = 1.000450
+[height] NA = 1.30: window-summed (W = 3000 nm) period = 1.000451 lambda_m/2; predicted 1 + 1/(k W)^2 = 1.000450
+[height] NA = 1.40: window-summed (W = 3000 nm) period = 1.000451 lambda_m/2; predicted 1 + 1/(k W)^2 = 1.000450
+[height] scalar, focus tracking the particle: period = lambda_m/2 = 200.00 nm exactly
+[height] period within 1% of lambda_m/2 only below NA = n_water sin(arccos(0.96040)) = 0.3706 (scalar fixed-focus formula)
+[psf] polystyrene a = 30.0 nm on glass (h = a), best focus zf = 139.8 nm: peak C = -2.0132e-01; at zf = 0: -1.3489e-01
+[psf] |E_s|^2 FWHM, vectorial along x: 216.2 nm
+[psf] |E_s|^2 FWHM, vectorial along y: 175.6 nm
+[psf] |E_s|^2 FWHM, scalar dipole: 177.1 nm
+[psf] |E_s|^2 FWHM, Airy NA 1.4: 195.5 nm
+[psf] Airy 0.514 lambda0/NA = 195.5 nm; vectorial x/y FWHM ratio = 1.231
+[psf] interference term Re(E_x) FWHM along x at focus zf = 0: 301.2 nm
+[image] polystyrene a = 15.0 nm, h = a, best focus zf = 185.9 nm, N = 1e+05 photons/pixel, one background frame, Gaussian illumination w0 = 4 um, particle at (600, -300) nm
+[image] model peak contrast -2.4083e-02 (off-centre, Gaussian beam); centred -2.4083e-02
+[image] 2000 images, centre pixel: mean -2.4127e-02 +- 9.8e-05 (model -2.4083e-02); std 4.3935e-03 +- 6.9e-05 (predicted 4.3913e-03; 1/sqrt(N) = 3.1623e-03)
+[image] PSF fit: mean -2.4096e-02 +- 2.7e-05; std 1.2099e-03 +- 1.9e-05 (predicted 1.2145e-03); gain over one pixel 3.62 = sqrt(sum T^2) = 3.65
+[detect] polystyrene, best focus zf = 215.5 nm, h = a, 3 sigma, pixel: a_min(N = 1e6) = 7.68 nm; slope d ln a_min / d ln N on 1e6-1e12 = -0.1644
+[detect] polystyrene, best focus zf = 215.5 nm, h = a, 3 sigma, PSF fit: a_min(N = 1e6) = 5.04 nm; slope d ln a_min / d ln N on 1e6-1e12 = -0.1651
+[detect] polystyrene, focus on interface, pixel: a_min(1e6) = 11.23 nm, slope 1e6-1e8 = -0.1222
+[detect] gold, best focus zf = 106.4 nm, h = a, 3 sigma, pixel: a_min(N = 1e6) = 2.63 nm; slope d ln a_min / d ln N on 1e6-1e12 = -0.1662
+[detect] gold, best focus zf = 106.4 nm, h = a, 3 sigma, PSF fit: a_min(N = 1e6) = 1.71 nm; slope d ln a_min / d ln N on 1e6-1e12 = -0.1664
+[detect] gold, focus on interface, pixel: a_min(1e6) = 2.86 nm, slope 1e6-1e8 = -0.1639
+[protein] dn/dc = 0.185 mL/g, h = 3.0 nm: alpha = 462.0 nm^3/MDa; contrast per MDa -1.8332e-03 at best focus zf = 221.3 nm, -1.2682e-04 with focus on the interface
+[protein] equivalent sphere (density 1.35 g/cm^3, n = 1.5797): alpha_sphere/alpha_dndc = 0.9621; 1 - d/6 - 2d^2/9 = 0.9609 (d = 0.1878)
+[protein] 66 kDa at 3 sigma with a PSF fit needs N = 4.61e+07 photons per pixel
+[protein] 150 kDa at 3 sigma with a PSF fit needs N = 8.93e+06 photons per pixel
+[protein] pixel, N = 1e+06: smallest detectable mass 1636.5 kDa
+[protein] pixel, N = 1e+08: smallest detectable mass 163.7 kDa
+[protein] pixel, N = 1e+10: smallest detectable mass 16.4 kDa
+[protein] PSF fit, N = 1e+06: smallest detectable mass 448.3 kDa
+[protein] PSF fit, N = 1e+08: smallest detectable mass 44.8 kDa
+[protein] PSF fit, N = 1e+10: smallest detectable mass 4.5 kDa
+[focus] h = 3 nm: best focus zf = 221.3 nm; |interference| at best / at zf = 0: 14.29
+[focus] h = 30 nm: best focus zf = 139.8 nm; |interference| at best / at zf = 0: 1.46
+[focus] h = 100 nm: best focus zf = -91.1 nm; |interference| at best / at zf = 0: 1.21
+[reference] fixed illumination: SNR at attenuation 1, 30: 12.49 +- 0.16, 13.47 +- 0.17 (exact theory 12.67, 13.27; weak-scatterer limit 2|s|sqrt(N_inc) = 12.65 at attenuation 1)
+[reference] fixed counts (full well): SNR at attenuation 1, 30: 12.52 +- 0.16, 400.07 +- 5.16 (exact theory 12.67, 398.24; weak-scatterer limit 2|s|sqrt(N_inc) = 12.65 at attenuation 1)
+[conv] DipoleImager interpolation, max error / peak at d_rho = 4, 2, 1, 0.5 nm: 1.7e-04, 2.9e-05, 7.3e-06, 1.8e-06; order (2-0.5 nm) 2.00, predicted 2
+[conv] roughness FFT box L = 5-82 um: wrap error at the bump 1.5e-02 -> 1.2e-04 (not monotonic: the image lattice sum converges only by oscillation); envelope slope -1.48, predicted -1.5
+[conv] speckle variance, FFT-grid sum vs radial integral, dkappa/kappa_NA = 0.074-0.0023: relative error 3.8e-02 -> 1.4e-04; envelope slope 1.44, predicted 1.5 (lattice points in a hard-edged disc); radial quadrature (400 nodes) vs 2000: < 1e-13
+[track] gold a = 10.0 nm, N = 1e+04, zf = 0, 15x15 pixels: CRLB at h = 24 nm: x 2.45, y 1.78, z 8.11 nm (z with amplitude known 3.91); centre contrast -0.1657
+[track] gold a = 10.0 nm, N = 1e+04, zf = 0, 15x15 pixels: CRLB at h = 90 nm: x 7.94, y 4.51, z 0.69 nm (z with amplitude known 0.68); centre contrast -0.0064
+[track] contrast zero crossings at h = 91.6, 212.1, 319.5 nm; sigma_z smallest at h = 86 nm (0.67 nm), sigma_x largest at h = 94 nm (8.12 nm)
+[track] fringe ambiguity at h = 60 nm: fit started at h + 240 nm converges to h = 280.1 nm, chi^2 = 746 vs 232 at the true fringe (225 pixels)
+[track] 200 fits at h = 25 nm, all four parameters free: std x, y, z = 2.59, 1.72, 8.50 nm (CRLB 2.45, 1.77, 7.47; standard error of a std 5%); bias in h -1.17 nm (standard error 0.60)
+[track] 200 fits at h = 60 nm, all four parameters free: std x, y, z = 3.49, 2.28, 1.44 nm (CRLB 3.25, 2.14, 1.47; standard error of a std 5%); bias in h +0.00 nm (standard error 0.10)
+[track] diffusing gold a = 10.0 nm, D = 0.50 um^2/s, dt = 20 us, 400 frames, N = 1e+04, amplitude known: z range 10-126 nm
+[track] error std x, y, z = 3.90, 2.90, 2.51 nm; rms CRLB 4.18, 2.84, 2.15 nm; max |error| 17.7 nm
+[track] expected scatter of a 2-lag D estimate from 400 frames, one axis (2000 simulated tracks): 14%
+[track] lateral MSD fit (2 lags): D = 0.506 um^2/s (true track 0.447, input 0.500); sigma = 3.57 nm (rms CRLB 3.58)
+[track] axial MSD fit (2 lags): D = 0.511 um^2/s (true track 0.473, input 0.500); sigma = 1.40 nm (rms CRLB 2.15)
+[rough] sigma = 0.3 nm, ell = 20.0 nm, focus zf = 215.5 nm (polystyrene best): speckle contrast rms 3.185e-03 (20 um map), spectral integral 3.176e-03
+[rough] polystyrene a = 12.0 nm on the rough glass: peak contrast -1.192e-02; raw image rms 3.105e-03; ratiometric image max |deviation from smooth glass| 1.9e-05
+[rough] zf = 0.0 nm, Monte Carlo (3 maps of 41 um) / integral at ell = 5, 20, 100, 400 nm: 0.9963(113), 0.9931(104), 0.9995(156), 0.9848(169); largest |deviation| 0.90 standard errors
+[rough] zf = 215.5 nm, Monte Carlo (3 maps of 41 um) / integral at ell = 5, 20, 100, 400 nm: 0.9999(12), 1.0000(44), 0.9968(48), 1.0023(13); largest |deviation| 1.82 standard errors
+[rough] zf = 0.0 nm: speckle rms peaks at ell = 117 nm (2.563e-03); NA <= n_water at zf = 0 gives < 1e-15
+[rough] zf = 215.5 nm: speckle rms peaks at ell = 143 nm (1.397e-02); NA <= n_water at zf = 0 gives < 1e-15
+[rough] polystyrene, focus on interface: speckle rms 6.793e-04; 3-sigma floor without background removal a = 10.20 nm
+[rough] polystyrene, best focus zf = 215.5 nm: speckle rms 3.176e-03; 3-sigma floor without background removal a = 11.16 nm
+[rough] gold, focus on interface: speckle rms 6.793e-04; 3-sigma floor without background removal a = 2.52 nm
+[rough] gold, best focus zf = 106.4 nm: speckle rms 2.191e-03; 3-sigma floor without background removal a = 3.41 nm
+[pt] |delta alpha(q=2k)| departs from steady state by 1% at 3.67e+06 Hz; arg L_Au = 0.7707 rad
+[pt] thermal lens, a = 10.0 nm, fixed absorbed power: |delta alpha(q=2k)| halves at 3.94e+07 Hz (D q^2 / 2 pi with q = 2k: 2.25e+07 Hz); at 1e+05 Hz: |delta alpha / steady| = 1.00050, phase +0.0040 rad; forward (q = 0) / back = 236.2; steady pupil edge (q = sqrt2 k) / back = 2.051
+[pt] gold a = 5 nm: sigma_abs = 44.9 nm^2; steady Delta T(a) at 100 kW/cm^2 = 1.19 K; delta alpha(2k)/alpha = -1.968e-03+1.948e-03j
+[pt] gold a = 10 nm: sigma_abs = 374.7 nm^2; steady Delta T(a) at 100 kW/cm^2 = 4.97 K; delta alpha(2k)/alpha = -1.880e-03+1.981e-03j
+[pt] gold a = 20 nm: sigma_abs = 3340.7 nm^2; steady Delta T(a) at 100 kW/cm^2 = 22.15 K; delta alpha(2k)/alpha = -1.419e-03+2.030e-03j
+[pt] gold a = 5 nm: |dC| largest at zf = 215 nm (6.456e-05); at zf = 0: 3.262e-06; at the static best focus 106.4 nm: 4.665e-05
+[pt] a = 5 nm, zf = 215 nm, 1e+05 Hz: dC = 6.456e-05+4.196e-07j (q-dependent lens), 4.564e-05+2.004e-07j (point dipole at q = 2k): ratio 1.415
+[pt] a = 10 nm, zf = 215 nm, 1e+05 Hz: dC = 5.191e-04+3.162e-06j (q-dependent lens), 3.712e-04+1.470e-06j (point dipole at q = 2k): ratio 1.398
+[pt] 100 kW/cm^2, 1e+05 Hz, zf = 215 nm, lock-in noise sqrt(2/N): a_min(1e10) = 4.36 nm, a_min(1e12) = 2.04 nm; beats the speckle floor (3.41 nm) from N = 1e+11
+[pt] 1 MW/cm^2, 1e+05 Hz, zf = 215 nm, lock-in noise sqrt(2/N): a_min(1e10) = 2.04 nm, a_min(1e12) = 0.95 nm; beats the speckle floor (3.41 nm) from N = 1e+09
+[pt] iSCAT gold, best focus 106.4 nm, speckle rms 2.191e-03: a_min(1e10) = 3.41 nm (shot noise alone 0.57 nm)
