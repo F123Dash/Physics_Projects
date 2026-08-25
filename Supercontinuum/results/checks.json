@@ -1,0 +1,73 @@
+[
+  {
+    "name": "Linear Gaussian broadening",
+    "value": "4.44e-16",
+    "target": "< 1e-3 relative",
+    "passed": true
+  },
+  {
+    "name": "SPM spectral peaks",
+    "value": "[2, 3, 4, 5]",
+    "target": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "passed": true
+  },
+  {
+    "name": "Fundamental soliton over 20 L_D",
+    "value": "1.05e-10",
+    "target": "< 1e-4",
+    "passed": true
+  },
+  {
+    "name": "N = 2 soliton period",
+    "value": "period_err = 6.23e-12, shape_err = 3.53e-11",
+    "target": "period within 0.5%, |A|^2 error at z0 < 1e-3",
+    "passed": true
+  },
+  {
+    "name": "N = 3 soliton period",
+    "value": "period_err = 3.72e-09, shape_err = 6.67e-09",
+    "target": "period within 0.5%, |A|^2 error at z0 < 1e-3",
+    "passed": true
+  },
+  {
+    "name": "Energy conservation (Kerr + dispersion)",
+    "value": "rk4ip = 4.54e-10, ssfm = 2.88e-13",
+    "target": "< 1e-8",
+    "passed": true
+  },
+  {
+    "name": "Raman soliton self-frequency shift",
+    "value": "measured = -0.0987, gordon = -0.0922, rel = 0.07",
+    "target": "within 20% of Gordon",
+    "passed": true
+  },
+  {
+    "name": "Dispersive-wave frequency",
+    "value": "sim = 6.31, phase_match = 6.28, fwhm = 0.176, phase_match_no_recoil = 6.16",
+    "target": "|Omega_sim - Omega_pm| < FWHM/2",
+    "passed": true
+  },
+  {
+    "name": "Benchmark (Dudley et al.)",
+    "value": "N = 8.66, L_D = 0.0682, L_fiss_theory = 0.00787, z_fiss = 0.0075, ratio = 0.953, lam_min = 491, lam_max = 1.31e+03, solitons = 5",
+    "target": "z_fiss within x1.5 of L_D/N; -40 dB span < 500 nm to > 1300 nm",
+    "passed": true
+  },
+  {
+    "name": "Convergence order",
+    "value": "rk4ip = 4.02, ssfm = 2",
+    "target": "RK4IP ~ h^4, split step ~ h^2",
+    "passed": true
+  },
+  {
+    "name": "Photon number (full GNLSE)",
+    "value": "photon = 3.46e-07, energy = 0.0892",
+    "target": "photon drift < 1e-6 while energy changes",
+    "passed": true
+  }
+]

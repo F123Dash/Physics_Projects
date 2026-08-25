@@ -1,0 +1,34 @@
+  batch   1 runs  n=1024   erk   on cuda:    8.9 s, 11932 steps max
+  batch   2 runs  n=2048   erk   on cuda:   10.6 s, 13349 steps max
+  batch   3 runs  n=2048   rk4ip on cuda:    3.4 s, 8000 steps max
+  batch   3 runs  n=4096   erk   on cuda:   13.5 s, 10266 steps max
+  batch   1 runs  n=4096   rk4ip on cuda:    0.0 s, 40 steps max
+  batch   4 runs  n=4096   ssfm  on cuda:    0.0 s, 1 steps max
+  batch   4 runs  n=8192   erk   on cuda:   25.9 s, 12140 steps max
+  batch  10 runs  n=8192   rk4ip on cuda:   60.4 s, 32768 steps max
+  batch   9 runs  n=8192   ssfm  on cuda:   15.4 s, 8192 steps max
+  batch   1 runs  n=8192   ssfm  on cuda:    0.8 s, 2000 steps max
+  batch   2 runs  n=16384  erk   on cuda:   24.0 s, 10835 steps max
+  batch   1 runs  n=32768  erk   on cuda:   17.9 s, 10764 steps max
+  all propagations: 181.3 s
+| Test | Measured | Target | Result |
+|---|---|---|---|
+| Linear Gaussian broadening | 4.44e-16 | < 1e-3 relative | PASS |
+| SPM spectral peaks | [2, 3, 4, 5] | [2, 3, 4, 5] | PASS |
+| Fundamental soliton over 20 L_D | 1.05e-10 | < 1e-4 | PASS |
+| N = 2 soliton period | period_err = 6.23e-12, shape_err = 3.53e-11 | period within 0.5%, |A|^2 error at z0 < 1e-3 | PASS |
+| N = 3 soliton period | period_err = 3.72e-09, shape_err = 6.67e-09 | period within 0.5%, |A|^2 error at z0 < 1e-3 | PASS |
+| Energy conservation (Kerr + dispersion) | rk4ip = 4.54e-10, ssfm = 2.88e-13 | < 1e-8 | PASS |
+| Raman soliton self-frequency shift | measured = -0.0987, gordon = -0.0922, rel = 0.07 | within 20% of Gordon | PASS |
+| Dispersive-wave frequency | sim = 6.31, phase_match = 6.28, fwhm = 0.176, phase_match_no_recoil = 6.16 | |Omega_sim - Omega_pm| < FWHM/2 | PASS |
+| Benchmark (Dudley et al.) | N = 8.66, L_D = 0.0682, L_fiss_theory = 0.00787, z_fiss = 0.0075, ratio = 0.953, lam_min = 491, lam_max = 1.31e+03, solitons = 5 | z_fiss within x1.5 of L_D/N; -40 dB span < 500 nm to > 1300 nm | PASS |
+| Convergence order | rk4ip = 4.02, ssfm = 2 | RK4IP ~ h^4, split step ~ h^2 | PASS |
+| Photon number (full GNLSE) | photon = 3.46e-07, energy = 0.0892 | photon drift < 1e-6 while energy changes | PASS |
+window study: {"windows": [1.5625, 3.125, 6.25, 12.5, 25.0], "win_err": [2.0526956894937514, 1.063770806410248, 0.0026671796484468405, 0.00012815842547871575, 0.0], "win_edge": [0.15790349445170507, 0.021970188954376527, 0.3158436463868902, 1.8419186353524668e-06, 2.2915633581076064e-10], "ns": [2048, 4096, 8192, 16384, 32768], "n_err": [1.885991002967362, 1.6520979541223846, 0.09705800329078852, 0.010858049031201732, 0.0], "n_edge": [0.08308926651889417, 0.039753317138942916, 3.0473348082379037e-09, 6.347294136324928e-11, 3.370447591400016e-18]}
+convergence: {'rk4ip': [0.2762154121110673, 0.07738837952451734, 0.01045196377955644, 0.0029092324910389867, 0.0006967736686167878, 7.784779971563768e-06, 4.965515593367199e-07, 2.9720414575531773e-08, 1.8340533322906336e-09], 'ssfm': [0.4524709053277108, 0.18551115738270166, 0.02860776828964383, 0.006634687284818428, 0.0021431764392474853, 0.00011421785207214905, 2.821509080599099e-05, 7.038418383958454e-06, 1.7587091855932218e-06]}
+  wrote figures/fig1_limits.png
+  wrote figures/fig2_conservation_raman_dw.png
+  wrote figures/fig3_benchmark_evolution.png
+  wrote figures/fig4_benchmark_output.png
+  wrote figures/fig5_convergence.png
+checks: exit 0, wall 188.8 s, CPU 189.3 s (avg 1.00 cores), peak RSS 1506 MB
