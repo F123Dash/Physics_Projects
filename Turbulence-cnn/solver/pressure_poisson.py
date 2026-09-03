@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.fft import dctn, idctn
 
 def gradient_p(p: np.ndarray, dx: float, dy: float):
     dpdx = np.zeros_like(p)
@@ -14,61 +15,26 @@ def apply_pressure_bc(p: np.ndarray) -> np.ndarray:
     p[-1, :] = p[-2, :]   # right   (i = N-1)
     return p
 
-def solve_pressure_poisson(
-    p:      np.ndarray,
-    b:      np.ndarray,
-    dx:     float,
-    dy:     float,
-    n_iter: int,
-    omega:  float = 1.7,
-    tol:    float = 1e-6,
-) -> np.ndarray:
-    if not (0.0 < omega < 2.0):
-        omega = 1.7
-    dx2   = dx * dx
-    dy2   = dy * dy
-    denom = 2.0 * (dx2 + dy2)
-    for it in range(n_iter):
-        p = apply_pressure_bc(p)
-        p[1:-1:2, 1:-1:2] = (
-            (1.0 - omega) * p[1:-1:2, 1:-1:2]
-            + omega * (
-                (p[2::2,   1:-1:2] + p[:-2:2,  1:-1:2]) * dy2
-              + (p[1:-1:2, 2::2  ] + p[1:-1:2, :-2:2 ]) * dx2
-              - b[1:-1:2, 1:-1:2] * dx2 * dy2
-            ) / denom
-        )
-        p[2:-1:2, 2:-1:2] = (
-            (1.0 - omega) * p[2:-1:2, 2:-1:2]
-            + omega * (
-                (p[3::2,   2:-1:2] + p[1:-2:2, 2:-1:2]) * dy2
-              + (p[2:-1:2, 3::2  ] + p[2:-1:2, 1:-2:2]) * dx2
-              - b[2:-1:2, 2:-1:2] * dx2 * dy2
-            ) / denom
-        )
-        p = apply_pressure_bc(p)
-        p[1:-1:2, 2:-1:2] = (
-            (1.0 - omega) * p[1:-1:2, 2:-1:2]
-            + omega * (
-                (p[2::2,   2:-1:2] + p[:-2:2,  2:-1:2]) * dy2
-              + (p[1:-1:2, 3::2  ] + p[1:-1:2, 1:-2:2]) * dx2
-              - b[1:-1:2, 2:-1:2] * dx2 * dy2
-            ) / denom
-        )
-        p[2:-1:2, 1:-1:2] = (
-            (1.0 - omega) * p[2:-1:2, 1:-1:2]
-            + omega * (
-                (p[3::2,   1:-1:2] + p[1:-2:2, 1:-1:2]) * dy2
-              + (p[2:-1:2, 2::2  ] + p[2:-1:2, :-2:2 ]) * dx2
-              - b[2:-1:2, 1:-1:2] * dx2 * dy2
-            ) / denom
-        )
-        p = apply_pressure_bc(p)
-        if tol is not None and (it + 1) % 25 == 0:
-            lap_p = (
-                (p[2:,   1:-1] - 2.0 * p[1:-1, 1:-1] + p[:-2,  1:-1]) / dx2
-              + (p[1:-1, 2:  ] - 2.0 * p[1:-1, 1:-1] + p[1:-1, :-2 ]) / dy2
-            )
-            if np.max(np.abs(lap_p - b[1:-1, 1:-1])) < tol:
-                break
-    return p
+_EIG_CACHE = {}
+
+def _laplacian_eigenvalues(nx: int, ny: int, dx: float, dy: float) -> np.ndarray:
+    # The 5-point Laplacian on the interior nodes, with the Neumann condition
+    # p[0] = p[1] eliminated, is diagonalised exactly by the DCT-II.
+    key = (nx, ny, dx, dy)
+    if key not in _EIG_CACHE:
+        lx = -4.0 / dx**2 * np.sin(np.pi * np.arange(nx) / (2 * nx))**2
+        ly = -4.0 / dy**2 * np.sin(np.pi * np.arange(ny) / (2 * ny))**2
+        lam = lx[:, None] + ly[None, :]
+        lam[0, 0] = 1.0   # constant mode is the Neumann null space; zeroed below
+        _EIG_CACHE[key] = lam
+    return _EIG_CACHE[key]
+
+def solve_pressure_poisson(b: np.ndarray, dx: float, dy: float) -> np.ndarray:
+    rhs = b[1:-1, 1:-1]
+    lam = _laplacian_eigenvalues(*rhs.shape, dx, dy)
+    p_hat = dctn(rhs, type=2, norm="ortho") / lam
+    p_hat[0, 0] = 0.0
+    p = np.zeros_like(b)
+    p[1:-1, 1:-1] = idctn(p_hat, type=2, norm="ortho")
+    p = apply_pressure_bc(p)
+    return p - p.mean()
