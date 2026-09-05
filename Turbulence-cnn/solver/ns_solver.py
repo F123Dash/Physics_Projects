@@ -1,57 +1,48 @@
 import numpy as np
 import os
+import sys
 import argparse
 import matplotlib.pyplot as plt
 
 try:
-    from .pressure_poisson import solve_pressure_poisson, apply_pressure_bc, gradient_p
-    from .generate_data    import run_simulation, plot_results
-except:
-    from pressure_poisson import solve_pressure_poisson, apply_pressure_bc, gradient_p
-    from generate_data    import run_simulation, plot_results
+    from .pressure_poisson import solve_pressure_poisson, gradient_p
+except ImportError:
+    from pressure_poisson import solve_pressure_poisson, gradient_p
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+import config
 
-PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SNAPSHOT_ROOT = os.path.join(PROJECT_ROOT, "snapshots")
-IMAGE_ROOT    = os.path.join(PROJECT_ROOT, "img_out")
+IMAGE_ROOT = config.IMAGE_ROOT
 
 
 def get_args():
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--seed",type=int, default=None)
-    p.add_argument("--validate_ghia", action="store_true",help="Run N=128 Ghia validation")
-    return p.parse_args()
+    p.add_argument("--validate_ghia", action="store_true", help="Run the Ghia et al. (1982) benchmark")
+    p.add_argument("--N", type=int, default=129, help="Grid nodes per side for --validate_ghia (odd puts a node on x=0.5)")
+    return p.parse_known_args()
 
-def init_seed(seed):
-    if seed is None:
-        seed = int(np.random.default_rng().integers(0, 2**32 - 1))
-    np.random.seed(seed)
-    print(f"Seed: {seed}")
-    return seed
 class NSconfig:
-    def __init__(self, Re: int = 1000, N: int = 64):
-        self.N  = N
+    def __init__(self, Re: int = 1000, N: int = 64, verbose: bool = True):
+        self.N  = N                       # nodes per side, including both walls
         self.L  = 1.0
-        self.dx = self.L / N
-        self.dy = self.L / N
+        self.dx = self.L / (N - 1)
+        self.dy = self.L / (N - 1)
         self.Re  = Re
         self.rho = 1.0
         self.U   = 1.0
         self.nu  = self.U * self.L / Re
-        self.dt          = 1e-3
+        self.dt          = 1e-3           # upper bound; stable_dt() sets the actual step
         self.t_end       = max(80.0, Re / 8.0)
-        self.t_start_save = self.t_end * 0.50
-        if Re > 1500:self.t_start_save = self.t_end * 0.40
-        if Re <= 400:T_save = 2.0
-        elif Re <= 1000:T_save = 1.0
-        else:T_save = 0.5
-        self.save_every = max(10, int(T_save / 1e-3))
-        self._T_save    = T_save   # stored for diagnostic printing
-        self.n_poisson   = 400
-        self.sor_omega   = 1.7
-        self.poisson_tol = 1e-6
-        print(f"Config: Re={Re}, N={N}x{N}, nu={self.nu:.5f}, "f"t_end={self.t_end:.1f}, t_start_save={self.t_start_save:.1f}, "
-            f"save_every={self.save_every} (~{T_save:.1f}s intervals)")
+        self.conv_tol    = 1e-4           # steady when max|du/dt| < conv_tol
+        self.t_min_conv  = 1.0
+        # Snapshot selection, used by generate_data.run_simulation
+        self.t_start_save   = 1.0
+        self.save_dt        = 0.5         # minimum time between saved snapshots
+        self.min_rel_change = 0.02        # minimum relative L2 change of (u, v) since the last saved snapshot
+        if verbose:
+            print(f"Config: Re={Re}, N={N}x{N}, dx={self.dx:.5f}, nu={self.nu:.5f}, t_end={self.t_end:.1f}")
 
 def laplacian(f, dx, dy):
     lap = np.zeros_like(f)
@@ -69,14 +60,27 @@ def divergence(u, v, dx, dy):
     )
     return div
 
-def advect_upwind(u, v, phi, dx, dy):
-    adv = np.zeros_like(phi)
-    i  = slice(1,-1); ip = slice(2,None); im = slice(None,-2)
-    j  = slice(1,-1); jp = slice(2,None); jm = slice(None,-2)
-    u_c = u[i,j]; v_c = v[i,j]
-    dphi_dx = np.where(u_c>0, (phi[i,j]-phi[im,j])/dx,  (phi[ip,j]-phi[i,j])/dx)
-    dphi_dy = np.where(v_c>0, (phi[i,j]-phi[i,jm])/dy,  (phi[i,jp]-phi[i,j])/dy)
-    adv[i,j] = u_c*dphi_dx + v_c*dphi_dy
+def _upwind_derivative(vel, phi, h):
+    """vel * dphi/dx along axis 0, MUSCL upwind with the van Leer limiter.
+
+    Second order where phi is smooth, first-order upwind at extrema and next to
+    the walls, so it is far less diffusive than plain first-order upwind.
+    """
+    d = phi[1:] - phi[:-1]
+    a, b = d[:-1], d[1:]
+    ab = a * b
+    slope = np.zeros_like(phi)
+    slope[1:-1] = np.where(ab > 0, 2.0*ab / np.where(ab > 0, a + b, 1.0), 0.0)
+    phi_L = phi[:-1] + 0.5*slope[:-1]     # face i+1/2 reconstructed from node i
+    phi_R = phi[1:]  - 0.5*slope[1:]      # face i+1/2 reconstructed from node i+1
+    out = np.zeros_like(phi)
+    v_c = vel[1:-1]
+    out[1:-1] = v_c * np.where(v_c > 0, phi_L[1:] - phi_L[:-1], phi_R[1:] - phi_R[:-1]) / h
+    return out
+
+def advect(u, v, phi, dx, dy):
+    adv = _upwind_derivative(u, phi, dx) + _upwind_derivative(v.T, phi.T, dy).T
+    adv[0, :] = adv[-1, :] = adv[:, 0] = adv[:, -1] = 0.0
     return adv
 
 
@@ -89,57 +93,110 @@ def apply_bc(u, v, U_lid):
 
 def step(u, v, p, cfg):
     dt=cfg.dt; dx=cfg.dx; dy=cfg.dy; nu=cfg.nu; rho=cfg.rho
-    u_star = u + dt*(-advect_upwind(u,v,u,dx,dy) + nu*laplacian(u,dx,dy))
-    v_star = v + dt*(-advect_upwind(u,v,v,dx,dy) + nu*laplacian(v,dx,dy))
+    u_star = u + dt*(-advect(u,v,u,dx,dy) + nu*laplacian(u,dx,dy))
+    v_star = v + dt*(-advect(u,v,v,dx,dy) + nu*laplacian(v,dx,dy))
     u_star, v_star = apply_bc(u_star, v_star, cfg.U)
     b = (rho/dt)*divergence(u_star, v_star, dx, dy)
-    b -= b.mean()
-    p = solve_pressure_poisson(p, b, dx, dy, cfg.n_poisson,cfg.sor_omega, tol=cfg.poisson_tol)
-    p -= p.mean()
+    p = solve_pressure_poisson(b, dx, dy)
     dpdx, dpdy = gradient_p(p, dx, dy)
     u_new = u_star - (dt/rho)*dpdx
     v_new = v_star - (dt/rho)*dpdy
     u_new, v_new = apply_bc(u_new, v_new, cfg.U)
-    u_new = np.clip(u_new, -10.0, 10.0)
-    v_new = np.clip(v_new, -10.0, 10.0)
+    vmax = max(np.max(np.abs(u_new)), np.max(np.abs(v_new)))
+    if not np.isfinite(vmax) or vmax > 10.0*cfg.U:
+        raise FloatingPointError(f"Solver blew up at Re={cfg.Re}: max|u|={vmax}")
     return u_new, v_new, p
 
-def stable_dt(u, v, dx, dy, nu, safety=0.2):
+def stable_dt(u, v, dx, dy, nu, safety=0.2, dt_max=1e-3):
     max_vel = max(np.max(np.abs(u)), np.max(np.abs(v)), 1.0)
     h       = min(dx, dy)
-    return min(safety*h/max_vel, safety*h**2/(4.0*nu), 1e-3)
+    return min(safety*h/max_vel, safety*h**2/(4.0*nu), dt_max)
 
 def vorticity(u, v, dx, dy):
-    omega = np.zeros_like(u)
-    omega[1:-1, 1:-1] = (
-        (v[2:,   1:-1] - v[:-2,  1:-1]) / (2.0*dx)
-      - (u[1:-1, 2:  ] - u[1:-1, :-2 ]) / (2.0*dy))
-    return omega
+    # Central differences inside, second-order one-sided on the walls, where
+    # the vorticity is largest (the lid).
+    return np.gradient(v, dx, axis=0, edge_order=2) - np.gradient(u, dy, axis=1, edge_order=2)
 
 def energy_spectrum(u, v):
     N       = u.shape[0]
     u_hat   = np.fft.fft2(u)
     v_hat   = np.fft.fft2(v)
-    k_cut   = N // 3
     kx      = np.fft.fftfreq(N) * N
-    ky      = np.fft.fftfreq(N) * N
-    KX, KY  = np.meshgrid(kx, ky, indexing="ij")
-    alias   = (np.abs(KX) > k_cut) | (np.abs(KY) > k_cut)
-    u_hat[alias] = 0.0; v_hat[alias] = 0.0
+    KX, KY  = np.meshgrid(kx, kx, indexing="ij")
     energy  = 0.5*(np.abs(u_hat)**2 + np.abs(v_hat)**2) / N**4
     K       = np.sqrt(KX**2 + KY**2)
-    k_bins  = np.arange(1, k_cut+1)
+    k_bins  = np.arange(1, N//2 + 1)
     E_k     = np.array([energy[(K>=k-0.5)&(K<k+0.5)].sum() for k in k_bins])
     return k_bins, E_k
 
-def is_converged(u, u_prev, v, v_prev, tol=1e-6):
-    return max(np.max(np.abs(u-u_prev)), np.max(np.abs(v-v_prev))) < tol
+def is_converged(u, u_prev, v, v_prev, tol=1e-6, dt=None):
+    change = max(np.max(np.abs(u-u_prev)), np.max(np.abs(v-v_prev)))
+    if dt is not None:
+        change /= dt
+    return change < tol
 
 def diagnostics(u, v, p, t, step_n, cfg):
     div_max = np.max(np.abs(divergence(u, v, cfg.dx, cfg.dy)))
     ke      = 0.5*np.mean(u**2 + v**2)
-    print(f"  t={t:.3f}  step={step_n:5d}  KE={ke:.4f}  "
-          f"|del·u|_max={div_max:.2e}  p=[{p.min():.3f},{p.max():.3f}]")
+    print(f"  Re={cfg.Re}  t={t:.3f}  step={step_n:6d}  KE={ke:.4f}  "
+          f"|del·u|_max={div_max:.2e}  p=[{p.min():.3f},{p.max():.3f}]", flush=True)
+
+def run(cfg, on_step=None, report_every=50000):
+    """March from rest until steady state (or t_end). on_step(t, u, v, p) is called after every step."""
+    N = cfg.N
+    u = np.zeros((N, N)); v = np.zeros((N, N)); p = np.zeros((N, N))
+    u, v = apply_bc(u, v, cfg.U)
+    t = 0.0; step_n = 0; converged = False
+    while t < cfg.t_end:
+        u_prev, v_prev = u, v
+        cfg.dt = stable_dt(u, v, cfg.dx, cfg.dy, cfg.nu)
+        u, v, p = step(u, v, p, cfg)
+        t += cfg.dt; step_n += 1
+        if on_step is not None:
+            on_step(t, u, v, p)
+        if report_every and step_n % report_every == 0:
+            diagnostics(u, v, p, t, step_n, cfg)
+        if t > cfg.t_min_conv and is_converged(u, u_prev, v, v_prev, tol=cfg.conv_tol, dt=cfg.dt):
+            converged = True
+            break
+    return u, v, p, t, converged
+
+def centerline_u(u):
+    """u along the vertical centreline x = 0.5, as a function of y."""
+    m = u.shape[0] // 2
+    return u[m, :] if u.shape[0] % 2 else 0.5*(u[m-1, :] + u[m, :])
+
+def centerline_v(v):
+    """v along the horizontal centreline y = 0.5, as a function of x."""
+    m = v.shape[1] // 2
+    return v[:, m] if v.shape[1] % 2 else 0.5*(v[:, m-1] + v[:, m])
+
+def streamfunction(u, dy):
+    """phi with u = dphi/dy and phi = 0 on the bottom wall (trapezoidal rule up each column)."""
+    psi = np.zeros_like(u, dtype=np.float64)
+    psi[:, 1:] = np.cumsum(0.5*(u[:, 1:] + u[:, :-1]), axis=1) * dy
+    return psi
+
+def _parabolic_offset(fm, f0, fp):
+    """Sub-grid offset (in cells) and value of the extremum of a parabola through 3 points."""
+    den = fm - 2.0*f0 + fp
+    if den == 0.0:
+        return 0.0, f0
+    off = 0.5*(fm - fp)/den
+    return off, f0 - 0.25*(fm - fp)*off
+
+def primary_vortex(u, dx, dy):
+    """(phi_min, x_c, y_c) of the primary vortex: the minimum of phi, refined to sub-grid accuracy."""
+    psi = streamfunction(u, dy)
+    i, j = np.unravel_index(np.argmin(psi[1:-1, 1:-1]), (psi.shape[0]-2, psi.shape[1]-2))
+    i += 1; j += 1
+    ox, vx = _parabolic_offset(psi[i-1, j], psi[i, j], psi[i+1, j])
+    oy, vy = _parabolic_offset(psi[i, j-1], psi[i, j], psi[i, j+1])
+    psi_min = vx + vy - psi[i, j]
+    return psi_min, (i + ox)*dx, (j + oy)*dy
+
+# Ghia et al. (1982), Table V: primary vortex phi_min and centre (x, y)
+_GHIA_VORTEX = {100: (-0.103423, 0.6172, 0.7344), 400: (-0.113909, 0.5547, 0.6055), 1000: (-0.117929, 0.5313, 0.5625)}
 
 _GHIA_U = np.array([
     [1.0000, 1.00000, 1.00000, 1.00000],
@@ -184,40 +241,19 @@ _GHIA_COL = {100:1, 400:2, 1000:3}
 def ghia_u(Re): col=_GHIA_COL.get(Re); return (None,None) if col is None else (_GHIA_U[:,0],_GHIA_U[:,col])
 def ghia_v(Re): col=_GHIA_COL.get(Re); return (None,None) if col is None else (_GHIA_V[:,0],_GHIA_V[:,col])
 
-def plot_energy_spectrum(u, v, cfg):
-    k, Ek = energy_spectrum(u, v)
-    fig, ax = plt.subplots(figsize=(7,5))
-    ax.loglog(k, Ek, "b-", lw=2, label=f"Simulation Re={cfg.Re}")
-    k_anchor = 5
-    idx = np.argmin(np.abs(k - k_anchor))
-    k_ref = np.array([float(k_anchor), float(k[-1])])
-    E_ref = Ek[idx] * (k_ref / k[idx])**(-5.0/3.0)
-    ax.loglog(k_ref, E_ref, "r--", lw=1.5, label=r"$k^{-5/3}$ Kolmogorov")
-    ax.set_xlabel("Wavenumber k", fontsize=12)
-    ax.set_ylabel("E(k)",         fontsize=12)
-    ax.set_title(f"Turbulent energy spectrum  Re={cfg.Re}", fontsize=12)
-    ax.legend(fontsize=11); ax.grid(True, which="both", alpha=0.3)
-    os.makedirs(IMAGE_ROOT, exist_ok=True)
-    fname = os.path.join(IMAGE_ROOT, f"spectrum_Re{cfg.Re}.png")
-    plt.savefig(fname, dpi=150, bbox_inches="tight")
-    pdf_path = os.path.splitext(fname)[0] + ".pdf"
-    plt.savefig(pdf_path, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {fname}")
-
 def plot_centerline(u, v, cfg):
-    N   = cfg.N; mid = N//2
+    N   = cfg.N
     y_vals = np.linspace(0.0, 1.0, N)
     x_vals = np.linspace(0.0, 1.0, N)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
     fig.suptitle(f"Centreline velocity profiles  Re={cfg.Re}  (Ghia et al. 1982)",fontsize=12)
-    ax1.plot(u[mid,:], y_vals, "b-", lw=2, label="Simulation")
+    ax1.plot(centerline_u(u), y_vals, "b-", lw=2, label="Simulation")
     gy, gu = ghia_u(cfg.Re)
     if gy is not None: ax1.plot(gu, gy, "ko", ms=5, label="Ghia et al. 1982")
     ax1.axvline(0, color="k", lw=0.5, ls="--")
     ax1.set_xlabel("u-velocity"); ax1.set_ylabel("y")
     ax1.set_title("u  along  x = 0.5"); ax1.legend(fontsize=9); ax1.grid(alpha=0.3)
-    ax2.plot(x_vals, v[:,mid], "r-", lw=2, label="Simulation")
+    ax2.plot(x_vals, centerline_v(v), "r-", lw=2, label="Simulation")
     gx, gv = ghia_v(cfg.Re)
     if gx is not None: ax2.plot(gx, gv, "ko", ms=5, label="Ghia et al. 1982")
     ax2.axhline(0, color="k", lw=0.5, ls="--")
@@ -232,58 +268,37 @@ def plot_centerline(u, v, cfg):
     plt.close(fig)
     print(f"Saved: {fname}")
 
-def run_ghia_validation():
-    print("GHIA VALIDATION MODE — N=128")
-    for Re in [100, 1000]:
-        cfg = NSconfig(Re=Re, N=128)
-        u   = np.zeros((128, 128))
-        v   = np.zeros((128, 128))
-        p   = np.zeros((128, 128))
-        u, v = apply_bc(u, v, cfg.U)
-        t = 0.0; step_n = 0
-        print(f"\nRunning Re={Re} N=128...")
-        while t < cfg.t_end:
-            u_prev = u.copy(); v_prev = v.copy()
-            cfg.dt = stable_dt(u, v, cfg.dx, cfg.dy, cfg.nu)
-            u, v, p = step(u, v, p, cfg)
-            t += cfg.dt; step_n += 1
-            if step_n % 10000 == 0:
-                diagnostics(u, v, p, t, step_n, cfg)
-            if step_n > 2000 and is_converged(u, u_prev, v, v_prev, tol=1e-7):
-                print(f"  Converged at t={t:.3f}")
-                break
+def ghia_errors(u, v, Re):
+    """Max and mean |sim - Ghia| for the u and v centreline profiles."""
+    s = np.linspace(0, 1, u.shape[0])
+    gy, gu = ghia_u(Re); gx, gv = ghia_v(Re)
+    eu = np.abs(np.interp(gy, s, centerline_u(u)) - gu)
+    ev = np.abs(np.interp(gx, s, centerline_v(v)) - gv)
+    return dict(u_max=eu.max(), u_mean=eu.mean(), v_max=ev.max(), v_mean=ev.mean())
+
+def run_ghia_validation(N=129):
+    print(f"GHIA VALIDATION MODE — N={N}")
+    for Re in sorted(_GHIA_COL):
+        cfg = NSconfig(Re=Re, N=N)
+        u, v, p, t, converged = run(cfg)
+        print(f"  Re={Re}: {'converged' if converged else 'NOT converged'} at t={t:.2f}")
         plot_centerline(u, v, cfg)
-        N = cfg.N; mid = N//2
-        gy, gu_ghia = ghia_u(Re)
-        if gy is not None:
-            y_sim = np.linspace(0, 1, N)
-            u_sim_at_ghia = np.interp(gy, y_sim, u[mid, :])
-            errors = np.abs(u_sim_at_ghia - gu_ghia)
-            print(f"  Re={Re} u-profile Ghia errors:")
-            print(f"    max  = {errors.max():.4f}")
-            print(f"    mean = {errors.mean():.4f}")
-            print(f"    worst point: y={gy[errors.argmax()]:.4f}  "
-                  f"sim={u_sim_at_ghia[errors.argmax()]:.4f}  "f"ghia={gu_ghia[errors.argmax()]:.4f}")
+        e = ghia_errors(u, v, Re)
+        print(f"  Re={Re} Ghia errors:  u max={e['u_max']:.4f} mean={e['u_mean']:.4f}   "
+              f"v max={e['v_max']:.4f} mean={e['v_mean']:.4f}")
+        psi_min, xc, yc = primary_vortex(u, cfg.dx, cfg.dy)
+        g_psi, g_x, g_y = _GHIA_VORTEX[Re]
+        print(f"  Re={Re} primary vortex:  phi_min={psi_min:.5f} (Ghia {g_psi:.5f}, {abs(psi_min/g_psi-1):.1%} off)   "
+              f"centre=({xc:.4f}, {yc:.4f}) (Ghia ({g_x:.4f}, {g_y:.4f}), {np.hypot(xc-g_x, yc-g_y):.4f} away)")
 
 if __name__ == "__main__":
-    args = get_args()
-    init_seed(args.seed)
+    args, _ = get_args()
     if args.validate_ghia:
-        run_ghia_validation()
+        run_ghia_validation(args.N)
     else:
-        RE_VALUES = [100, 200, 400, 600, 800, 1000, 1200, 1500,1700, 2000, 2500, 3200]
-        results = {}
-        for Re in RE_VALUES:
-            u, v, p, snaps = run_simulation(Re=Re, N=64,save_dir=SNAPSHOT_ROOT,NSconfig_class=NSconfig,
-                                            apply_bc_fn=apply_bc,step_fn=step,stable_dt_fn=stable_dt,
-                                            diagnostics_fn=diagnostics,is_converged_fn=is_converged,)
-            results[Re] = (u, v, p)
-            cfg = NSconfig(Re=Re, N=64)
-            plot_results(u, v, p, cfg, vorticity_fn=vorticity, title="(t=final)")
-            plot_centerline(u, v, cfg)
-        Re_turb = max(RE_VALUES)
-        u_t, v_t, _ = results[Re_turb]
-        cfg_turb = NSconfig(Re=Re_turb, N=64)
-        plot_energy_spectrum(u_t, v_t, cfg_turb)
-        print(f"\nSnapshots: {SNAPSHOT_ROOT}/Re_*/")
-        print(f"Images:    {IMAGE_ROOT}/")
+        # Data generation lives in generate_data.py; forward all arguments to it.
+        try:
+            from . import generate_data
+        except ImportError:
+            import generate_data
+        generate_data.main(sys.argv[1:])
