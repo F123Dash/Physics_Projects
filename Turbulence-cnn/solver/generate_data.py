@@ -1,80 +1,83 @@
 import numpy as np
 import os
+import sys
+import glob
+import json
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import matplotlib.pyplot as plt
 
-def _solver():
-    import importlib, sys
-    _dir = os.path.dirname(os.path.abspath(__file__))
-    if _dir not in sys.path:
-        sys.path.insert(0, _dir)
-    return importlib.import_module("ns_solver")
+try:
+    from . import ns_solver as ns
+except ImportError:
+    import ns_solver as ns
 
-def run_simulation(Re:int= 1000,N:int= 64,save_dir: str= None,divergence_fn:object = None,
-                   apply_bc_fn:object = None,step_fn:object = None,stable_dt_fn:object = None,
-                   diagnostics_fn:object = None,is_converged_fn:object = None,NSconfig_class:object = None,
-                   vorticity_fn:object = None):
-    s = _solver()
-    NSconfig_cls  = NSconfig_class   or s.NSconfig
-    _apply_bc     = apply_bc_fn      or s.apply_bc
-    _step         = step_fn          or s.step
-    _stable_dt    = stable_dt_fn     or s.stable_dt
-    _diagnostics  = diagnostics_fn   or s.diagnostics
-    _is_converged = is_converged_fn  or s.is_converged
-    _vorticity    = vorticity_fn     or s.vorticity
-    PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    SNAPSHOT_ROOT = os.path.join(PROJECT_ROOT, "snapshots")
-    if save_dir is None:save_dir = SNAPSHOT_ROOT
-    re_dir = os.path.join(save_dir, f"Re_{Re}")
+config = ns.config
+SNAPSHOT_ROOT = config.SNAPSHOT_ROOT
+IMAGE_ROOT    = config.IMAGE_ROOT
+
+
+def _prepare_dir(re_dir: str, overwrite: bool) -> None:
     os.makedirs(re_dir, exist_ok=True)
-    cfg = NSconfig_cls(Re=Re, N=N)
-    u = np.zeros((N, N))
-    v = np.zeros((N, N))
-    p = np.zeros((N, N))
-    u, v = _apply_bc(u, v, cfg.U)
-    t= 0.0
-    step_n = 0
-    snap_n = 0
-    snapshots = []
-    start_save_t = getattr(cfg, "t_start_save", 0.0)
-    print(f"\nStarting simulation: Re={Re}, grid={N}X{N}")
-    print(f"  Running to t={cfg.t_end:.1f}, "f"saving every {cfg.save_every} steps "f"(after t={start_save_t:.2f})\n")
-    while t < cfg.t_end:
-        u_prev = u.copy()
-        v_prev = v.copy()
-        cfg.dt = _stable_dt(u, v, cfg.dx, cfg.dy, cfg.nu)
-        u, v, p = _step(u, v, p, cfg)
-        t+= cfg.dt
-        step_n += 1
-        if t >= start_save_t and step_n % cfg.save_every == 0:
-            omega = _vorticity(u, v, cfg.dx, cfg.dy)
-            snap  = np.stack([u, v, p, omega], axis=0).astype(np.float32)
-            fname = os.path.join(re_dir, f"snap_{snap_n:04d}.npy")
-            np.save(fname, snap)
-            snapshots.append(snap)
-            snap_n += 1
-            _diagnostics(u, v, p, t, step_n, cfg)
-        if step_n > 1000 and _is_converged(u, u_prev, v, v_prev, tol=1e-7):
-            print(f"  Converged at t={t:.3f}, step={step_n}")
-            for extra in range(150):
-                cfg.dt = _stable_dt(u, v, cfg.dx, cfg.dy, cfg.nu)
-                u, v, p = _step(u, v, p, cfg)
-                p -= p.mean()
-                omega = _vorticity(u, v, cfg.dx, cfg.dy)
-                snap  = np.stack([u, v, p, omega], axis=0).astype(np.float32)
-                np.save(os.path.join(re_dir, f"snap_{snap_n:05d}.npy"), snap)
-                snapshots.append(snap)
-                snap_n += 1
-            break
-    print(f"\nDone — saved {snap_n} snapshots to {re_dir}/")
-    return u, v, p, snapshots
+    old = glob.glob(os.path.join(re_dir, "snap_*.npy")) + glob.glob(os.path.join(re_dir, "meta.json"))
+    if not old:
+        return
+    if not overwrite:
+        raise FileExistsError(f"{re_dir} already holds {len(old)} file(s) from an earlier run. "
+                              f"Pass --overwrite to replace them, or choose a new --save_dir.")
+    for f in old:
+        os.remove(f)
+
+def _rel_change(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-12))
+
+def run_simulation(Re: int = 1000, N: int = 64, refine: int = 2, save_dir: str = None,
+                   overwrite: bool = False, t_start_save: float = None, save_dt: float = None,
+                   min_rel_change: float = None):
+    N_sim = (N - 1) * refine + 1
+    cfg = ns.NSconfig(Re=Re, N=N_sim)
+    if t_start_save   is not None: cfg.t_start_save   = t_start_save
+    if save_dt        is not None: cfg.save_dt        = save_dt
+    if min_rel_change is not None: cfg.min_rel_change = min_rel_change
+    if save_dir is None: save_dir = SNAPSHOT_ROOT
+    re_dir = os.path.join(save_dir, f"Re_{Re}")
+    _prepare_dir(re_dir, overwrite)
+    state = dict(times=[], last_uv=None, next_t=cfg.t_start_save)
+
+    def save(t, u, v, p):
+        omega = ns.vorticity(u, v, cfg.dx, cfg.dy)
+        snap  = np.stack([u, v, p, omega], axis=0)[:, ::refine, ::refine].astype(np.float32)
+        np.save(os.path.join(re_dir, f"snap_{len(state['times']):05d}.npy"), snap)
+        state["times"].append(float(t))
+        state["last_uv"] = snap[:2]
+
+    def on_step(t, u, v, p):
+        if t < state["next_t"]:
+            return
+        state["next_t"] = t + cfg.save_dt
+        uv = np.stack([u, v])[:, ::refine, ::refine]
+        if state["last_uv"] is None or _rel_change(uv, state["last_uv"]) >= cfg.min_rel_change:
+            save(t, u, v, p)
+
+    print(f"\nStarting simulation: Re={Re}, solver grid={N_sim}x{N_sim}, saved grid={N}x{N}", flush=True)
+    u, v, p, t, converged = ns.run(cfg, on_step)
+    final_uv = np.stack([u, v])[:, ::refine, ::refine]
+    if state["last_uv"] is None or _rel_change(final_uv, state["last_uv"]) > 1e-6:
+        save(t, u, v, p)
+    meta = dict(Re=Re, N=N, N_sim=N_sim, refine=refine, dx=1.0/(N-1), nu=cfg.nu,
+                advection="MUSCL van Leer", poisson="DCT exact",
+                t_start_save=cfg.t_start_save, save_dt=cfg.save_dt,
+                min_rel_change=cfg.min_rel_change, conv_tol=cfg.conv_tol,
+                converged=bool(converged), t_final=float(t), times=state["times"])
+    with open(os.path.join(re_dir, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=1)
+    status = f"converged at t={t:.2f}" if converged else f"NOT converged by t_end={cfg.t_end:.1f}"
+    print(f"Done — Re={Re}: {status}, saved {len(state['times'])} snapshots to {re_dir}/", flush=True)
+    return u[::refine, ::refine], v[::refine, ::refine], p[::refine, ::refine], len(state["times"])
 
 def plot_results(u:np.ndarray,v:np.ndarray,p:np.ndarray,
-                 cfg:object,vorticity_fn:object = None,title:str = "",):
-    _vorticity = vorticity_fn or _solver().vorticity
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    IMAGE_ROOT   = os.path.join(PROJECT_ROOT, "img_out")
-    omega = _vorticity(u, v, cfg.dx, cfg.dy)
+                 cfg:object,title:str = "",):
+    omega = ns.vorticity(u, v, cfg.dx, cfg.dy)
     x = np.linspace(0, cfg.L, cfg.N)
     y = np.linspace(0, cfg.L, cfg.N)
     X, Y = np.meshgrid(x, y)
@@ -113,40 +116,51 @@ def plot_results(u:np.ndarray,v:np.ndarray,p:np.ndarray,
     plt.close(fig)
     print(f"Saved: {fname}")
 
-def _get_args():
+def _get_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Generate NS snapshots for CNN training",
+        description="Generate lid-driven cavity snapshots for CNN training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--re_min",type=int,default=100,help="Lowest Reynolds number")
-    p.add_argument("--re_max",type=int,default=3200,help="Highest Reynolds number")
-    p.add_argument("--n_re",type=int,default=12,help="Number of Re values (log-spaced between re_min and re_max)")
-    p.add_argument("--N",type=int,default=64,help="Grid size (NxN)")
-    p.add_argument("--save_dirt",type=str,default=None)
-    p.add_argument("--seed",type=int,default=None)
-    return p.parse_args()
+    p.add_argument("--re_values",type=int,nargs="+",default=config.RE_VALUES,help="Reynolds numbers to simulate")
+    p.add_argument("--N",type=int,default=64,help="Saved grid size (NxN nodes, walls included)")
+    p.add_argument("--refine",type=int,default=2,help="Solver grid is (N-1)*refine+1 nodes per side")
+    p.add_argument("--save_dir",type=str,default=SNAPSHOT_ROOT)
+    p.add_argument("--overwrite",action="store_true",help="Delete existing snapshots in each Re_* folder first")
+    p.add_argument("--workers",type=int,default=1,help="Re values simulated in parallel")
+    p.add_argument("--t_start_save",type=float,default=None,help="Override NSconfig.t_start_save")
+    p.add_argument("--save_dt",type=float,default=None,help="Override NSconfig.save_dt")
+    p.add_argument("--min_rel_change",type=float,default=None,help="Override NSconfig.min_rel_change")
+    p.add_argument("--no_plots",action="store_true")
+    return p.parse_args(argv)
+
+def main(argv=None):
+    args = _get_args(argv)
+    re_values = sorted(set(args.re_values), reverse=True)   # slowest (highest Re) first
+    print(f"\nRe sweep ({len(re_values)} values): {sorted(re_values)}  ->  {args.save_dir}")
+    kw = dict(N=args.N, refine=args.refine, save_dir=args.save_dir, overwrite=args.overwrite,
+              t_start_save=args.t_start_save, save_dt=args.save_dt, min_rel_change=args.min_rel_change)
+    for Re in re_values:   # fail before any simulation starts, not hours in
+        _prepare_dir(os.path.join(args.save_dir, f"Re_{Re}"), args.overwrite)
+    kw["overwrite"] = True   # folders were just checked or cleared
+    results = {}
+    if args.workers > 1:
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(run_simulation, Re=Re, **kw): Re for Re in re_values}
+            for fut in as_completed(futures):
+                results[futures[fut]] = fut.result()
+    else:
+        for Re in re_values:
+            results[Re] = run_simulation(Re=Re, **kw)
+    print(f"\nSnapshots per Re:")
+    for Re in sorted(results):
+        print(f"  Re={Re:5d}  n={results[Re][3]}")
+    if not args.no_plots:
+        for Re in sorted(results):
+            u, v, p, _ = results[Re]
+            cfg = ns.NSconfig(Re=Re, N=args.N, verbose=False)
+            plot_results(u, v, p, cfg, title="(t=final)")
+            ns.plot_centerline(u, v, cfg)
+    print(f"\nAll Re done.  Snapshots in {args.save_dir}/Re_*/")
 
 if __name__ == "__main__":
-    args = _get_args()
-    if args.seed is not None:
-        np.random.seed(args.seed)
-        print(f"Seed: {args.seed}")
-    re_values = np.unique(
-        np.round(
-            np.logspace(
-                np.log10(args.re_min),
-                np.log10(args.re_max),
-                args.n_re,
-            )
-        ).astype(int)
-    ).tolist()
-    print(f"\nRe sweep ({len(re_values)} values): {re_values}")
-    s = _solver()
-    PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    IMAGE_ROOT    = os.path.join(PROJECT_ROOT, "img_out")
-    for Re in re_values:
-        u, v, p, snaps = run_simulation(Re=Re, N=args.N, save_dir=args.save_dir)
-        cfg = s.NSconfig(Re=Re, N=args.N)
-        plot_results(u, v, p, cfg, vorticity_fn=s.vorticity, title="(t=final)")
-        s.plot_centerline(u, v, cfg)
-    print(f"\nAll Re done.  Snapshots in {args.save_dir or '(default)'}/Re_*/")
+    main()
