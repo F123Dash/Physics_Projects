@@ -1,8 +1,9 @@
 """
 FDTD 1D - Visualization script
-Reads fdtd_data.csv produced by ftdt.cpp and produces:
-  1. Animated GIF  ->  fdtd_animation.gif
-  2. Static multi-panel figure  ->  fdtd_snapshots.png
+Reads data_outputs/1D_data.csv produced by 1D.cpp and produces:
+  1. Animated GIF  ->  results_outputs/1D_animation.gif
+  2. Static multi-panel figure  ->  results_outputs/1D_snapshots.png
+Hy is plotted scaled by eta0 so both fields share one axis (equal for a +z wave).
 """
 
 import sys, os
@@ -12,9 +13,14 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # -- Config --------------------------------------------------------------------
-CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "./data_outputs/1D_data.csv")
-SAVE_PNG = "./results_outputs/1D_snapshots.png"
-SAVE_GIF = "./results_outputs/1D_animation.gif"   # set to None to skip
+HERE     = os.path.dirname(os.path.abspath(__file__))
+CSV_FILE = os.path.join(HERE, "data_outputs", "1D_data.csv")
+SAVE_PNG = os.path.join(HERE, "results_outputs", "1D_snapshots.png")
+SAVE_GIF = os.path.join(HERE, "results_outputs", "1D_animation.gif")   # set to None to skip
+ETA0     = 376.730313668
+
+if not os.path.exists(CSV_FILE):
+    sys.exit(f"ERROR: '{CSV_FILE}' not found.\nBuild and run 1D.cpp first:  make 1D && ./1D")
 
 print(f"Loading {CSV_FILE} ...")
 df = pd.read_csv(CSV_FILE)
@@ -64,8 +70,10 @@ if SAVE_GIF:
     print(f"Animation saved -> {SAVE_GIF}")
 
 # 2.  Static multi-panel figure (evenly-spaced snapshots)
+# (spread over the frames where a pulse is still on the grid)
 n_panels = 6
-idx_sel  = np.linspace(0, len(steps) - 1, n_panels, dtype=int)
+active   = np.flatnonzero(np.abs(EX).max(axis=1) > 0.05 * np.abs(EX).max())
+idx_sel  = np.linspace(active[0], active[-1], n_panels, dtype=int)
 
 ncols = 2
 nrows = (n_panels + 1) // ncols
@@ -75,7 +83,7 @@ axes = axes.flatten()
 for k, idx in enumerate(idx_sel):
     ax = axes[k]
     ax.plot(z, EX[idx], color="royalblue", lw=1.5, label="Ex [V/m]")
-    ax.plot(z, HY[idx], color="tomato",    lw=1.5, label="Hy [A/m]")
+    ax.plot(z, ETA0 * HY[idx], color="tomato", lw=1.5, ls="--", label="η0·Hy [V/m]")
     ax.axhline(0, color="k", lw=0.5)
     ax.set_title(f"step = {steps[idx]}", fontsize=10)
     ax.set_ylim(-ex_lim, ex_lim)
@@ -90,7 +98,7 @@ for k in range(n_panels, len(axes)):
 
 handles, labels = axes[0].get_legend_handles_labels()
 fig_s.legend(handles, labels, loc="upper right", fontsize=10)
-fig_s.suptitle("1D FDTD snapshots - Ex & Hy fields", fontsize=13)
+fig_s.suptitle("1D FDTD snapshots - Ex and η0·Hy (equal for a +z wave, opposite for -z)", fontsize=13)
 fig_s.tight_layout()
 os.makedirs(os.path.dirname(SAVE_PNG), exist_ok=True)
 fig_s.savefig(SAVE_PNG, dpi=150)

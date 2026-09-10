@@ -1,8 +1,8 @@
 """
 2D FDTD - Visualization script
-Reads the CSV produced by 2d_fdtd.cpp and produces:
-  1. Animated GIF  ->  fdtd_2d_animation.gif
-  2. Static multi-panel figure  ->  fdtd_2d_snapshots.png
+Reads data_outputs/2D_data.csv produced by 2D.cpp and produces:
+  1. Animated GIF  ->  results_outputs/2D_animation.gif
+  2. Static multi-panel figure  ->  results_outputs/2D_snapshots.png
 """
 
 import sys
@@ -14,9 +14,10 @@ import matplotlib.animation as animation
 from matplotlib.colors import TwoSlopeNorm
 
 # Config
-CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "./data_outputs/2D_data.csv")
-SAVE_PNG = "./results_outputs/2D_snapshots.png"
-SAVE_GIF = "./results_outputs/2D_animation.gif"
+HERE     = os.path.dirname(os.path.abspath(__file__))
+CSV_FILE = os.path.join(HERE, "data_outputs", "2D_data.csv")
+SAVE_PNG = os.path.join(HERE, "results_outputs", "2D_snapshots.png")
+SAVE_GIF = os.path.join(HERE, "results_outputs", "2D_animation.gif")
 DX       = 1e-4   # cell size in x [m]  
 DY       = 1e-4   # cell size in y [m]
 
@@ -24,8 +25,7 @@ DY       = 1e-4   # cell size in y [m]
 if not os.path.exists(CSV_FILE):
     sys.exit(
         f"ERROR: '{CSV_FILE}' not found.\n"
-        "Compile and run 2d_fdtd.cpp first:\n"
-        "  g++ -O2 -o fdtd_2d 2d_fdtd.cpp && ./fdtd_2d"
+        "Build and run 2D.cpp first:  make 2D && ./2D"
     )
 
 print(f"Loading {CSV_FILE} ...")

@@ -1,489 +1,402 @@
-// 3D_fdtd.cpp — Full 3-D FDTD with CPML absorbing boundary
-// Maxwell curl equations (SI, lossless free space):
-//   ∂H/∂t = -(1/μ₀) ∇×E
-//   ∂E/∂t =  (1/ε₀) ∇×H
+// 3D.cpp — 3-D FDTD plane-wave scattering: TFSF source + CPML (engine in fdtd3d.hpp)
 //
-// Yee staggered-grid, 6-component update.
-// Boundary: CPML (Convolutional Perfectly Matched Layer), NPML cells thick.
-// Source  : soft CW Ez injection with cosine-ramp A(t) = ½(1-cos(πn/T_RAMP)).
+// An x-propagating, z-polarised plane wave (Gaussian-modulated pulse) is injected with a
+// total-field / scattered-field (TFSF) box. The incident field comes from a 1-D auxiliary
+// Yee grid with the same Δ and Δt, so for axis-aligned incidence its numerical dispersion
+// matches the 3-D grid exactly.
 //
-// Diagnostics:
-//    ./data_outputs/phase_vel_3D.csv   — leading-edge sphere radius vs time (ramp window)
-//    ./data_outputs/dispersion_3D.csv  — Ez probe time series
-//    ./data_outputs/swr_scan_3D.csv    — peak |Ez| envelope along x
-//    ./data_outputs/3D_slice.csv  — Ez(x,y) snapshots at z=SRC_Z
+// Modes
+//   ./3D mie [R]   homogeneous sphere εr = 4, radius a = 1.4 mm resolved by R cells
+//                  (default 20 → Δ = 70 µm); changing R is a grid-convergence study.
+//                  Scattered power through a closed surface in the scattered-field region is
+//                  DFT'd at 41 frequencies (30–110 GHz) → Q_sca, compared with Mie theory.
+//   ./3D leak      same geometry with no sphere: TFSF leakage (should be ~round-off).
+//   ./3D grin      GRIN sphere εr(r) = 1 + 3(1 − r/R), R = 40 cells (2.8 mm ≈ 0.7 λ at 75 GHz).
+//                  |Ez/E0|² at 75 GHz on the z = centre plane, showing the focal spot.
+//
+// Outputs (./data_outputs/): 3D_<mode>_meta.csv, mie_qsca_R<R>.csv, mie_curve.csv, grin_slice.csv
 
-#include <algorithm>
-#include <cmath>
+#include "fdtd3d.hpp"
+
+#include <complex>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
+#include <string>
 #include <vector>
 
-//   Physical constants   
-static constexpr double C0   = 2.99792458e8;
-static constexpr double MU0  = 1.25663706212e-6;
-static constexpr double EPS0 = 8.8541878128e-12;
+using namespace fdtd;
+using cplx = std::complex<double>;
 
-//   Grid — 160³  (11.2 mm × 11.2 mm × 11.2 mm)  —  λ/Δx ≈ 57 @ 75 GHz  
-static constexpr int    NX = 160, NY = 160, NZ = 160;
-static constexpr double DX = 7e-5, DY = 7e-5, DZ = 7e-5;  // [m]
+constexpr double DX_GRIN = 7e-5;    // [m]  λ/Δ ≈ 57 at 75 GHz
+constexpr double A_MIE   = 1.4e-3;  // [m]  Mie sphere radius; Δ = A_MIE / R_cells
+constexpr double COURANT = 0.99;    // Δt = 0.99 Δ/(c√3)  →  S = 0.5716
+constexpr int    NPML    = 12;
+// CPML parameters from cpml_test (best worst-case error at 12 cells)
+constexpr double SIGMA_FACTOR = 0.75, KAPPA_MAX = 1.0, ALPHA_MAX = 1e11;
 
-// CFL: Δt = 0.99·Δ/(c·√3)  →  S ≈ 0.5716
-static const double DT  = 0.99 * DX / (C0 * std::sqrt(3.0));
-static const double S_C = C0 * DT / DX;
-
-//   Source   
-static constexpr int    SRC_X  = NX / 2;   // 50
-static constexpr int    SRC_Y  = NY / 2;   // 50
-static constexpr int    SRC_Z  = NZ / 2;   // 50
-static constexpr double F_CW   = 75e9;
-static const     double W_CW   = 2.0 * M_PI * F_CW;
-// Keep wavefront inside grid during ramp: n_wall ≈ (NX/2)/S ≈ 140 → use 120
-static constexpr int    T_RAMP = 120;
-
-//   Simulation   
-static constexpr int NSTEP      = 2500;
-static constexpr int SNAP       = 50;    // snapshot every 50 steps
-static constexpr int SWR_WINDOW = 500;
-
-// Dispersion probes along +x — both in free space (PML starts at NX-NPML = 145).
-// r1 = 3.5 mm (50 cells), r2 = 4.06 mm (58 cells)  — far from sphere edge (R=2.8mm)
-static constexpr int P1_X = SRC_X + 50;   // 130
-static constexpr int P2_X = SRC_X + 58;   // 138
-
-//   CPML parameters   
-static constexpr int    NPML      = 15;
-// sigma and alpha in 1/s  (normalised: b = exp(-(sigma/kappa + alpha)·dt), a is dimensionless)
-static constexpr double SIGMA_MAX = 4.0e13;  // 1/s
-static constexpr double KAPPA_MAX = 5.0;
-static constexpr double ALPHA_MAX = 1.0e11;  // 1/s  (stabilises evanescent waves)
-
-//   Field arrays   
-static double Ex[NX][NY][NZ], Ey[NX][NY][NZ], Ez[NX][NY][NZ];
-static double Hx[NX][NY][NZ], Hy[NX][NY][NZ], Hz[NX][NY][NZ];
-
-//   Relative permittivity grid (1.0 everywhere by default)  
-static double eps_r[NX][NY][NZ];
-
-//   Gradient-index dielectric sphere   
-// Profile: eps_r(r) = 1 + (EPS_C - 1)·(1 - r/R)   for r < SPHERE_R
-//          eps_r(r) = 1                              for r ≥ SPHERE_R
-// Centred on the source; eps_r(0)=EPS_C, eps_r(R)=1 → smooth impedance match.
-// GRIN sphere: R = 40 cells = 2.8 mm ≈ 0.7λ;  ε_c = 4  →  n_max = 2
-static constexpr double SPHERE_R   = 40.0 * DX;   // radius = 2.8 mm
-static constexpr double SPHERE_EPS = 4.0;          // centre relative permittivity
-
-//   CPML coefficient 1-D arrays   
-static double bx[NX], ax[NX], kx[NX];
-static double by[NY], ay[NY], ky_[NY];  // ky_ avoids collision with math macro
-static double bz[NZ], az[NZ], kz[NZ];
-
-//   CPML auxiliary (convolution-history) fields  
-// H-update auxiliaries
-static double psi_Hx_y[NX][NY][NZ], psi_Hx_z[NX][NY][NZ];
-static double psi_Hy_x[NX][NY][NZ], psi_Hy_z[NX][NY][NZ];
-static double psi_Hz_x[NX][NY][NZ], psi_Hz_y[NX][NY][NZ];
-// E-update auxiliaries
-static double psi_Ex_y[NX][NY][NZ], psi_Ex_z[NX][NY][NZ];
-static double psi_Ey_x[NX][NY][NZ], psi_Ey_z[NX][NY][NZ];
-static double psi_Ez_x[NX][NY][NZ], psi_Ez_y[NX][NY][NZ];
-
-//   Probe & diagnostic storage  
-static std::vector<double> probe1_ts, probe2_ts;
-static double swr_max[NX] = {};
-struct PVRec { int n; double t, r, vph; };
-static std::vector<PVRec> pv_recs;
-
-// Permittivity initialisation — fill eps_r with the GRIN sphere profile
-static void init_sphere()
+// ── Mie theory (Bohren & Huffman §4.4), real relative index m, μ = 1 ────────────────────────
+static double mie_qsca(double m, double x)
 {
-    const double cx = SRC_X * DX;
-    const double cy = SRC_Y * DY;
-    const double cz = SRC_Z * DZ;
-
-    for (int i = 0; i < NX; ++i)
-     for (int j = 0; j < NY; ++j)
-      for (int k = 0; k < NZ; ++k) {
-          eps_r[i][j][k] = 1.0;   // default: free space
-          const double dx_ = i*DX - cx;
-          const double dy_ = j*DY - cy;
-          const double dz_ = k*DZ - cz;
-          const double r   = std::sqrt(dx_*dx_ + dy_*dy_ + dz_*dz_);
-          if (r < SPHERE_R)
-              eps_r[i][j][k] = 1.0 + (SPHERE_EPS - 1.0) * (1.0 - r / SPHERE_R);
-      }
+    const int nmax = int(x + 4.0 * std::cbrt(x) + 2.0);
+    auto psi  = [](int n, double z) { return z * std::sph_bessel(n, z); };
+    auto dpsi = [&](int n, double z) { return psi(n - 1, z) - n * psi(n, z) / z; };
+    auto xi   = [](int n, double z) { return z * cplx(std::sph_bessel(n, z), std::sph_neumann(n, z)); };
+    auto dxi  = [&](int n, double z) { return xi(n - 1, z) - double(n) * xi(n, z) / z; };
+    double q = 0;
+    for (int n = 1; n <= nmax; ++n) {
+        const double mx = m * x;
+        const cplx a = (m * psi(n, mx) * dpsi(n, x) - psi(n, x) * dpsi(n, mx)) /
+                       (m * psi(n, mx) * dxi(n, x) - xi(n, x) * dpsi(n, mx));
+        const cplx b = (psi(n, mx) * dpsi(n, x) - m * psi(n, x) * dpsi(n, mx)) /
+                       (psi(n, mx) * dxi(n, x) - m * xi(n, x) * dpsi(n, mx));
+        q += (2 * n + 1) * (std::norm(a) + std::norm(b));
+    }
+    return 2.0 * q / (x * x);
 }
 
-//   
-// CPML initialisation
-// Profile: sigma(x) = sigma_max·(d/δ)³,  kappa(x) = 1+(kappa_max-1)·(d/δ)³
-//          alpha(x) = alpha_max·(1-d/δ)  (d = depth into PML, δ = NPML·Δ)
-// All in 1/s.  b = exp(-(sigma/kappa + alpha)·dt)
-//              a = sigma/(sigma·kappa + kappa²·alpha) · (b - 1)   [dimensionless]
-// In steady state: 1/kappa + a/(1-b) → 0  → perfect absorption.
-//   
-static void init_cpml()
-{
-    auto fill = [](int N, double* b, double* a, double* k) {
-        for (int i = 0; i < N; ++i) {
-            double sigma = 0, kappa = 1, alpha = 0;
-            if (i < NPML) {
-                double x = double(NPML - i) / double(NPML);
-                sigma = SIGMA_MAX * std::pow(x, 3);
-                kappa = 1.0 + (KAPPA_MAX - 1.0) * std::pow(x, 3);
-                alpha = ALPHA_MAX * (1.0 - x);
-            } else if (i >= N - NPML) {
-                double x = double(i - (N - NPML)) / double(NPML);
-                sigma = SIGMA_MAX * std::pow(x, 3);
-                kappa = 1.0 + (KAPPA_MAX - 1.0) * std::pow(x, 3);
-                alpha = ALPHA_MAX * (1.0 - x);
+// ── TFSF plane wave: +x propagation, Ez polarisation, Hy = −Ez/η ───────────────────────────
+// Total-field region: E nodes with i∈[i0,i1], j∈[j0,j1], k∈[k0,k1]. The 1-D grid shares the
+// 3-D x index: ez1[m] at x = m, hy1[m] at x = m + ½. It is long enough that its far-end
+// reflection never returns to the box during the run.
+struct TFSF {
+    int i0, i1, j0, j1, k0, k1;
+    std::vector<double> ez1, hy1;
+    double ce0, ch;
+
+    TFSF(const Grid& g, const int b[6], int nstep) : i0(b[0]), i1(b[1]), j0(b[2]), j1(b[3]), k0(b[4]), k1(b[5])
+    {
+        const size_t na = g.n[0] + 1 + size_t(0.5 * nstep * g.courant()) + 20;
+        ez1.assign(na, 0.0);
+        hy1.assign(na, 0.0);
+        ce0 = g.ce0;
+        ch  = g.ch;
+    }
+    double ce(const Grid& g, int c, size_t p) const { return g.ce[c].empty() ? ce0 : g.ce[c][p]; }
+
+    void correct_H(Grid& g) const   // uses Ez_inc at time n
+    {
+        for (int j = j0; j <= j1; ++j)
+            for (int k = k0; k < k1; ++k) {
+                g.at(HY, i0 - 1, j, k) -= ch * ez1[i0];
+                g.at(HY, i1, j, k)     += ch * ez1[i1];
             }
-            // All quantities in 1/s  —  no EPS0 in exponent
-            b[i] = std::exp(-(sigma / kappa + alpha) * DT);
-            double denom = sigma * kappa + kappa * kappa * alpha;
-            a[i] = (denom > 0.0) ? sigma / denom * (b[i] - 1.0) : 0.0;
-            k[i] = kappa;
-        }
-    };
-    fill(NX, bx, ax, kx);
-    fill(NY, by, ay, ky_);
-    fill(NZ, bz, az, kz);
-}
-
-//   
-// H-field update — CPML version
-// Full update equations for all three magnetic components.
-//   
-static void update_H()
-{
-    const double coeff = DT / MU0;
-
-    for (int i = 0; i < NX-1; ++i)
-     for (int j = 0; j < NY-1; ++j)
-      for (int k = 0; k < NZ-1; ++k) {
-
-        // Determine if this cell touches the PML region on any axis
-        const bool in_pml = (i < NPML || i >= NX-NPML ||
-                              j < NPML || j >= NY-NPML ||
-                              k < NPML || k >= NZ-NPML);
-
-        const double dEzdy = (Ez[i][j+1][k] - Ez[i][j][k]) / DY;
-        const double dEydz = (Ey[i][j][k+1] - Ey[i][j][k]) / DZ;
-        const double dExdz = (Ex[i][j][k+1] - Ex[i][j][k]) / DZ;
-        const double dEzdx = (Ez[i+1][j][k] - Ez[i][j][k]) / DX;
-        const double dEydx = (Ey[i+1][j][k] - Ey[i][j][k]) / DX;
-        const double dExdy = (Ex[i][j+1][k] - Ex[i][j][k]) / DY;
-
-        if (in_pml) {
-            //   CPML update: stretched-coordinate curl  
-            psi_Hx_y[i][j][k] = by[j]*psi_Hx_y[i][j][k] + ay[j]*dEzdy;
-            psi_Hx_z[i][j][k] = bz[k]*psi_Hx_z[i][j][k] + az[k]*dEydz;
-            Hx[i][j][k] -= coeff * (
-                dEzdy/ky_[j] + psi_Hx_y[i][j][k]
-              - dEydz/kz[k]  - psi_Hx_z[i][j][k]);
-
-            psi_Hy_z[i][j][k] = bz[k]*psi_Hy_z[i][j][k] + az[k]*dExdz;
-            psi_Hy_x[i][j][k] = bx[i]*psi_Hy_x[i][j][k] + ax[i]*dEzdx;
-            Hy[i][j][k] -= coeff * (
-                dExdz/kz[k]  + psi_Hy_z[i][j][k]
-              - dEzdx/kx[i]  - psi_Hy_x[i][j][k]);
-
-            psi_Hz_x[i][j][k] = bx[i]*psi_Hz_x[i][j][k] + ax[i]*dEydx;
-            psi_Hz_y[i][j][k] = by[j]*psi_Hz_y[i][j][k] + ay[j]*dExdy;
-            Hz[i][j][k] -= coeff * (
-                dEydx/kx[i]  + psi_Hz_x[i][j][k]
-              - dExdy/ky_[j] - psi_Hz_y[i][j][k]);
-        } else {
-            //   Standard Yee update (interior — no CPML overhead)  
-            Hx[i][j][k] -= coeff * (dEzdy - dEydz);
-            Hy[i][j][k] -= coeff * (dExdz - dEzdx);
-            Hz[i][j][k] -= coeff * (dEydx - dExdy);
-        }
+        for (int i = i0; i <= i1; ++i)
+            for (int k = k0; k < k1; ++k) {
+                g.at(HX, i, j0 - 1, k) += ch * ez1[i];
+                g.at(HX, i, j1, k)     -= ch * ez1[i];
+            }
     }
-}
+    void correct_E(Grid& g) const   // uses Hy_inc at time n + ½
+    {
+        for (int j = j0; j <= j1; ++j)
+            for (int k = k0; k < k1; ++k) {
+                size_t p = g.id(i0, j, k);
+                g.f[EZ][p] -= ce(g, EZ, p) * hy1[i0 - 1];
+                p = g.id(i1, j, k);
+                g.f[EZ][p] += ce(g, EZ, p) * hy1[i1];
+            }
+        for (int i = i0; i < i1; ++i)
+            for (int j = j0; j <= j1; ++j) {
+                size_t p = g.id(i, j, k0);
+                g.f[EX][p] += ce(g, EX, p) * hy1[i];
+                p = g.id(i, j, k1);
+                g.f[EX][p] -= ce(g, EX, p) * hy1[i];
+            }
+    }
+    void step_H()
+    {
+        for (size_t m = 0; m + 1 < hy1.size(); ++m) hy1[m] += ch * (ez1[m + 1] - ez1[m]);
+    }
+    void step_E(double src)
+    {
+        for (size_t m = 1; m + 1 < ez1.size(); ++m) ez1[m] += ce0 * (hy1[m] - hy1[m - 1]);
+        ez1[0] = src;
+    }
+};
 
-//   
-// E-field update — CPML version
-//   
-static void update_E()
-{
-    const double coeff_base = DT / EPS0;   // scaled per cell by eps_r[i][j][k]
+// ── DFT of the tangential fields on a closed box (scattered-field region) ──────────────────
+// Sample points are the face-cell centres; each staggered component is averaged onto them.
+struct FluxBox {
+    struct Pt { int face; size_t idx[4][4]; double w[4][4]; };   // comps: E_t1, E_t2, H_t1, H_t2
+    std::vector<Pt> pts;
+    std::vector<double> freqs;
+    std::vector<cplx> acc;            // [pt][freq][comp]
+    double max_e = 0;                 // max |E_t| seen on the surface (for leakage / decay checks)
 
-    for (int i = 1; i < NX-1; ++i)
-     for (int j = 1; j < NY-1; ++j)
-      for (int k = 1; k < NZ-1; ++k) {
+    FluxBox(const Grid& g, const int lo[3], const int hi[3], std::vector<double> f) : freqs(std::move(f))
+    {
+        for (int ax = 0; ax < 3; ++ax)
+            for (int side = 0; side < 2; ++side) {
+                const int t1 = (ax + 1) % 3, t2 = (ax + 2) % 3;
+                for (int u = lo[t1]; u < hi[t1]; ++u)
+                    for (int v = lo[t2]; v < hi[t2]; ++v) {
+                        double pos[3];
+                        pos[ax] = side ? hi[ax] : lo[ax];
+                        pos[t1] = u + 0.5;
+                        pos[t2] = v + 0.5;
+                        Pt p{};
+                        p.face = 2 * ax + side;
+                        const int comps[4] = {t1, t2, 3 + t1, 3 + t2};
+                        for (int c = 0; c < 4; ++c) stencil(g, comps[c], pos, p.idx[c], p.w[c]);
+                        pts.push_back(p);
+                    }
+            }
+        acc.assign(pts.size() * freqs.size() * 4, 0.0);
+    }
 
-        const bool   in_pml = (i < NPML || i >= NX-NPML ||
-                               j < NPML || j >= NY-NPML ||
-                               k < NPML || k >= NZ-NPML);
-        const double coeff  = coeff_base / eps_r[i][j][k];  // local permittivity
-
-        const double dHzdy = (Hz[i][j][k] - Hz[i][j-1][k]) / DY;
-        const double dHydz = (Hy[i][j][k] - Hy[i][j][k-1]) / DZ;
-        const double dHxdz = (Hx[i][j][k] - Hx[i][j][k-1]) / DZ;
-        const double dHzdx = (Hz[i][j][k] - Hz[i-1][j][k]) / DX;
-        const double dHydx = (Hy[i][j][k] - Hy[i-1][j][k]) / DX;
-        const double dHxdy = (Hx[i][j][k] - Hx[i][j-1][k]) / DY;
-
-        if (in_pml) {
-            //   CPML update   
-            psi_Ex_y[i][j][k] = by[j]*psi_Ex_y[i][j][k] + ay[j]*dHzdy;
-            psi_Ex_z[i][j][k] = bz[k]*psi_Ex_z[i][j][k] + az[k]*dHydz;
-            Ex[i][j][k] += coeff * (
-                dHzdy/ky_[j] + psi_Ex_y[i][j][k]
-              - dHydz/kz[k]  - psi_Ex_z[i][j][k]);
-
-            psi_Ey_z[i][j][k] = bz[k]*psi_Ey_z[i][j][k] + az[k]*dHxdz;
-            psi_Ey_x[i][j][k] = bx[i]*psi_Ey_x[i][j][k] + ax[i]*dHzdx;
-            Ey[i][j][k] += coeff * (
-                dHxdz/kz[k]  + psi_Ey_z[i][j][k]
-              - dHzdx/kx[i]  - psi_Ey_x[i][j][k]);
-
-            psi_Ez_x[i][j][k] = bx[i]*psi_Ez_x[i][j][k] + ax[i]*dHydx;
-            psi_Ez_y[i][j][k] = by[j]*psi_Ez_y[i][j][k] + ay[j]*dHxdy;
-            Ez[i][j][k] += coeff * (
-                dHydx/kx[i]  + psi_Ez_x[i][j][k]
-              - dHxdy/ky_[j] - psi_Ez_y[i][j][k]);
-        } else {
-            //   Standard Yee update (interior)  
-            Ex[i][j][k] += coeff * (dHzdy - dHydz);
-            Ey[i][j][k] += coeff * (dHxdz - dHzdx);
-            Ez[i][j][k] += coeff * (dHydx - dHxdy);
+    // Average component c (0..5) onto pos (cell units)
+    static void stencil(const Grid& g, int c, const double pos[3], size_t idx[4], double w[4])
+    {
+        int lo[3], cnt[3];
+        for (int a = 0; a < 3; ++a) {
+            const bool half_comp = (c < 3) ? (a == c) : (a != c - 3);
+            const bool half_pos  = std::abs(pos[a] - std::floor(pos[a]) - 0.5) < 1e-9;
+            if (half_comp == half_pos) { lo[a] = int(std::floor(pos[a])); cnt[a] = 1; }
+            else if (half_comp)        { lo[a] = int(pos[a]) - 1;        cnt[a] = 2; }  // integer pos
+            else                       { lo[a] = int(std::floor(pos[a])); cnt[a] = 2; } // half pos
         }
+        int m = 0;
+        const double wt = 1.0 / (cnt[0] * cnt[1] * cnt[2]);
+        for (int a = 0; a < cnt[0]; ++a)
+            for (int b = 0; b < cnt[1]; ++b)
+                for (int d = 0; d < cnt[2]; ++d) {
+                    idx[m] = g.id(lo[0] + a, lo[1] + b, lo[2] + d);
+                    w[m++] = wt;
+                }
+        for (; m < 4; ++m) { idx[m] = 0; w[m] = 0; }
     }
-}
 
-//   
-// Leading-edge sphere radius: outermost cell where |Ez| > 1 % of peak
-//   
-static double wavefront_radius_3d()
-{
-    double peak = 0.0;
-    for (int i = 0; i < NX; ++i)
-     for (int j = 0; j < NY; ++j)
-      for (int k = 0; k < NZ; ++k)
-        peak = std::max(peak, std::abs(Ez[i][j][k]));
-    if (peak < 1e-20) return 0.0;
-
-    const double thresh = 0.01 * peak;
-    double rmax = 0.0;
-    for (int i = 0; i < NX; ++i)
-     for (int j = 0; j < NY; ++j)
-      for (int k = 0; k < NZ; ++k) {
-        if (std::abs(Ez[i][j][k]) > thresh) {
-            double dx_ = (i - SRC_X) * DX;
-            double dy_ = (j - SRC_Y) * DY;
-            double dz_ = (k - SRC_Z) * DZ;
-            rmax = std::max(rmax, std::sqrt(dx_*dx_ + dy_*dy_ + dz_*dz_));
+    double accumulate(const Grid& g, int n)   // returns max |E_t| on the surface this step
+    {
+        const size_t nf = freqs.size();
+        std::vector<cplx> phE(nf), phH(nf);
+        for (size_t q = 0; q < nf; ++q) {
+            const double w = 2 * M_PI * freqs[q];
+            phE[q] = std::polar(1.0, -w * (n + 1.0) * g.dt);
+            phH[q] = std::polar(1.0, -w * (n + 0.5) * g.dt);
         }
+        double me = 0;
+        const int comps_of_face[3][4] = {{EY, EZ, HY, HZ}, {EZ, EX, HZ, HX}, {EX, EY, HX, HY}};
+        #pragma omp parallel for schedule(static) reduction(max : me)
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const Pt& p = pts[i];
+            double val[4];
+            for (int c = 0; c < 4; ++c) {
+                const auto& F = g.f[comps_of_face[p.face / 2][c]];
+                val[c] = 0;
+                for (int s = 0; s < 4; ++s) val[c] += p.w[c][s] * F[p.idx[c][s]];
+            }
+            me = std::max({me, std::abs(val[0]), std::abs(val[1])});
+            cplx* a = &acc[i * nf * 4];
+            for (size_t q = 0; q < nf; ++q) {
+                a[4 * q + 0] += val[0] * phE[q];
+                a[4 * q + 1] += val[1] * phE[q];
+                a[4 * q + 2] += val[2] * phH[q];
+                a[4 * q + 3] += val[3] * phH[q];
+            }
+        }
+        max_e = std::max(max_e, me);
+        return me;
     }
-    return rmax;
+
+    // Outward time-averaged power at frequency q:  ½ Re ∮ (E × H*)·n dA
+    double power(size_t q, double dx) const
+    {
+        const size_t nf = freqs.size();
+        double P = 0;
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const cplx* a = &acc[(i * nf + q) * 4];
+            const double sgn = (pts[i].face % 2) ? 1.0 : -1.0;
+            P += sgn * 0.5 * std::real(a[0] * std::conj(a[3]) - a[1] * std::conj(a[2]));
+        }
+        return P * dx * dx;
+    }
+};
+
+static void write_meta(const std::string& mode, const Grid& g, double cx, double cy, double cz, double R,
+                       const int box[6], const int flux_lo[3], const int flux_hi[3], double f_map)
+{
+    FILE* fp = std::fopen(("./data_outputs/3D_" + mode + "_meta.csv").c_str(), "w");
+    std::fprintf(fp, "key,value\n");
+    std::fprintf(fp, "nx,%d\nny,%d\nnz,%d\nnpml,%d\ndx,%.10e\ndt,%.10e\n", g.n[0], g.n[1], g.n[2], NPML, g.dx, g.dt);
+    std::fprintf(fp, "cx,%.3f\ncy,%.3f\ncz,%.3f\nR_cells,%.3f\n", cx, cy, cz, R);
+    std::fprintf(fp, "i0,%d\ni1,%d\nj0,%d\nj1,%d\nk0,%d\nk1,%d\n", box[0], box[1], box[2], box[3], box[4], box[5]);
+    std::fprintf(fp, "flux_x0,%d\nflux_x1,%d\nflux_y0,%d\nflux_y1,%d\n", flux_lo[0], flux_hi[0], flux_lo[1], flux_hi[1]);
+    std::fprintf(fp, "f_map_Hz,%.6e\n", f_map);
+    std::fclose(fp);
 }
 
-//   
-// Summary: dispersion (DFT phase), SWR, phase-velocity fit
-//   
-static void print_summary()
+int main(int argc, char** argv)
 {
-    //   DFT phase-difference in pre-reflection window  
-    const int first_refl = T_RAMP
-        + (int)((NX-1-SRC_X + NX-1-P1_X) / S_C) - 5;
-    const int win_start = T_RAMP + 5;
-    const int win_end   = std::min(first_refl, (int)probe1_ts.size());
-
-    double re1 = 0, im1 = 0, re2 = 0, im2 = 0;
-    for (int i = win_start; i < win_end; ++i) {
-        double phi = W_CW * i * DT;
-        re1 += probe1_ts[i] * std::cos(phi);
-        im1 += probe1_ts[i] * std::sin(phi);
-        re2 += probe2_ts[i] * std::cos(phi);
-        im2 += probe2_ts[i] * std::sin(phi);
+    const std::string mode = argc > 1 ? argv[1] : "mie";
+    if (mode != "mie" && mode != "leak" && mode != "grin") {
+        std::cerr << "usage: ./3D [mie [R_cells] | leak | grin]\n";
+        return 1;
     }
-    double dphi = std::atan2(im2, re2) - std::atan2(im1, re1);
-    while (dphi >  M_PI) dphi -= 2.0 * M_PI;
-    while (dphi < -M_PI) dphi += 2.0 * M_PI;
-
-    const double r1 = (P1_X - SRC_X) * DX;
-    const double r2 = (P2_X - SRC_X) * DX;
-    const double dr = r2 - r1;
-    const double arg_d = std::sin(W_CW * DT / 2.0) / S_C;
-    const double k_th  = (std::abs(arg_d) <= 1.0)
-                       ? (2.0/DX) * std::asin(arg_d) : 0.0;
-    const double vph_th  = (k_th > 0) ? W_CW / k_th : C0;
-    const double k_meas  = dphi / dr;
-    const double vph_meas= (k_meas != 0) ? W_CW / k_meas : C0;
-    const double err_pct = std::abs(vph_meas - vph_th) / C0 * 100.0;
-
-    std::cout << "\n  Dispersion (CW, 75 GHz)   \n";
-    std::cout << std::scientific << std::setprecision(4);
-    std::cout << "  Courant S           = " << S_C << "\n";
-    std::cout << "  DFT window          = steps " << win_start
-              << "-" << win_end << "  (pre-reflection)\n";
-    std::cout << "  Δphi (DFT)            = " << dphi << " rad  over Δr="
-              << dr*1e3 << " mm  (r1=" << r1*1e3 << " mm, r2=" << r2*1e3 << " mm)\n";
-    std::cout << "  k_th                = " << k_th
-              << " rad/m   vph_th  = " << vph_th/C0 << " c\n";
-    std::cout << "  k_meas              = " << k_meas
-              << " rad/m   vph_meas = " << vph_meas/C0 << " c\n";
-    std::cout << "  Δvph/c              = " << err_pct << " %\n";
-
-    //   PML absorption: compare field at PML entry vs 8 cells inside  
-    // The SWR metric is invalid for 3D point-source (1/r amplitude decay
-    // naturally gives large Emax/Emin).  Instead, report the PML attenuation:
-    //   Att = |Ez| at (NX-NPML)  / |Ez| at (NX-NPML+8)
-    const int i_pml_in  = NX - NPML;       // first PML cell
-    const int i_pml_mid = NX - NPML + 8;   // 8 cells into PML
-    const double E_entry   = (i_pml_in  < NX) ? swr_max[i_pml_in]  : 1.0;
-    const double E_inside  = (i_pml_mid < NX) ? swr_max[i_pml_mid] : 1.0;
-    const double att_dB    = (E_inside > 0 && E_entry > 0)
-                           ? 20.0 * std::log10(E_entry / E_inside) : 0.0;
-
-    std::cout << "\n  CPML performance   \n";
-    std::cout << std::scientific << std::setprecision(4);
-    std::cout << "  E at PML entry (i=" << i_pml_in  << ") = " << E_entry  << " V/m\n";
-    std::cout << "  E inside PML   (i=" << i_pml_mid << ") = " << E_inside << " V/m\n";
-    std::cout << "  CPML attenuation                = " << att_dB << " dB over 8 cells\n";
-    std::cout << "  (SWR metric invalid here: 1/r spreading makes Emax/Emin large\n"
-              << "   even with zero reflection)\n";
-
-    //   Phase-velocity from DFT k-measurement (same data as dispersion)  
-    std::cout << "\n  Phase velocity (DFT probe method)   \n";
-    std::cout << "  v_ph = W_CW / k_meas = " << vph_meas/C0 << " c\n";
-    std::cout << "  v_ph_theoretical    = " << vph_th/C0  << " c\n";
-    std::cout << "  (Note: CW wavefront tracker unreliable for v_ph;\n"
-              << "   DFT phase-difference is the authoritative measurement)\n";
-}
-
-//   
-int main()
-{
-    // Initialise CPML coefficients
-    init_cpml();
-
-    // Build gradient-index dielectric sphere
-    init_sphere();
-
-    probe1_ts.reserve(NSTEP);
-    probe2_ts.reserve(NSTEP);
-
-    // Create output directory if it doesn't exist
     std::filesystem::create_directories("./data_outputs");
+    const bool grin = mode == "grin";
+    const double R  = grin ? 40.0 : (argc > 2 ? std::atof(argv[2]) : 20.0);
 
-    // Open output files
-    FILE* f_snap = std::fopen("./data_outputs/3D_slice.csv",  "w");
-    FILE* f_pv   = std::fopen("./data_outputs/phase_vel_3D.csv",   "w");
-    FILE* f_disp = std::fopen("./data_outputs/dispersion_3D.csv",  "w");
-    FILE* f_swr  = std::fopen("./data_outputs/swr_scan_3D.csv",    "w");
-    if (!f_snap || !f_pv || !f_disp || !f_swr) {
-        std::cerr << "Cannot open output files.\n"; return 1;
+    // ── Geometry (cells): CPML | gap | flux surface | 3 | TFSF box | margin | sphere ───────
+    const int margin = grin ? 8 : 4, flux_gap = 3, pml_gap = 5;
+    const int Ri = int(std::ceil(R));
+    const int behind = grin ? 70 : margin;            // extra total-field room behind the sphere
+    const int lead = NPML + pml_gap + flux_gap;
+    const int c  = lead + Ri + margin;                // sphere centre (y, z, and x)
+    const int nx = c + Ri + behind + lead;
+    const int ny = 2 * c, nz = 2 * c;
+    const int box[6] = {c - Ri - margin, c + Ri + behind, c - Ri - margin, c + Ri + margin,
+                        c - Ri - margin, c + Ri + margin};
+    const int flux_lo[3] = {box[0] - flux_gap, box[2] - flux_gap, box[4] - flux_gap};
+    const int flux_hi[3] = {box[1] + flux_gap, box[3] + flux_gap, box[5] + flux_gap};
+
+    const double DX = grin ? DX_GRIN : A_MIE / R;
+    CPMLParams pml{NPML, SIGMA_FACTOR * sigma_opt(3, DX), KAPPA_MAX, ALPHA_MAX, 3};
+    Grid g(nx, ny, nz, DX, COURANT, pml);
+
+    // ── Material ─────────────────────────────────────────────────────────────────────
+    const double cx = c, cy = c, cz = c;
+    if (mode != "leak") {
+        auto eps = [&](double x, double y, double z) {
+            const double r = std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz));
+            if (r >= R) return 1.0;
+            return grin ? 1.0 + 3.0 * (1.0 - r / R) : 4.0;
+        };
+        const double lo[3] = {cx - R, cy - R, cz - R}, hi[3] = {cx + R, cy + R, cz + R};
+        g.set_eps(eps, 4, lo, hi);
     }
-    std::fprintf(f_snap, "step,x,y,ez\n");
-    std::fprintf(f_pv,   "step,time_s,leading_edge_m,vph_m_per_s\n");
-    std::fprintf(f_disp, "step,time_s,ez_p1,ez_p2\n");
 
-    // Export permittivity slice at z=SRC_Z for visualisation
-    {
-        FILE* f_eps = std::fopen("./data_outputs/dielectric_slice_3D.csv", "w");
-        if (f_eps) {
-            std::fprintf(f_eps, "x,y,eps_r\n");
-            for (int i = 0; i < NX; ++i)
-             for (int j = 0; j < NY; ++j)
-                std::fprintf(f_eps, "%d,%d,%.6f\n", i, j,
-                             eps_r[i][j][SRC_Z]);
-            std::fclose(f_eps);
+    // ── Source and run length ────────────────────────────────────────────────────────
+    const double f0 = 70e9, tau = 1.125e-11, t0 = 4.0 * tau;  // spectrum ≥ e^-2 of peak over 30–110 GHz
+    // Run until the pulse has crossed the grid and the surface field has rung down to
+    // DECAY × its peak (checked over windows of 200 steps), so the DFTs are not truncated.
+    const double DECAY = 1e-6;
+    const int nmin = int((t0 + 4 * tau) / g.dt + nx / g.courant());
+    const int nmax = 40000, window = 200;
+    TFSF tf(g, box, nmax);
+
+    std::vector<double> freqs;
+    const double f_map = 75e9;
+    if (grin) freqs = {f_map};
+    else for (int q = 0; q <= 40; ++q) freqs.push_back(30e9 + q * 2e9);
+    FluxBox fb(g, flux_lo, flux_hi, freqs);
+
+    // Incident reference (at the sphere centre) and, for grin, the Ez slice DFT
+    std::vector<cplx> Einc(freqs.size(), 0.0), Hinc(freqs.size(), 0.0);
+    std::vector<cplx> slice, inc_line;
+    if (grin) { slice.assign(size_t(nx + 1) * (ny + 1), 0.0); inc_line.assign(nx + 1, 0.0); }
+    double max_inc = 0;
+
+    std::printf("3D FDTD %s  |  grid %d x %d x %d, Δ = %.0f µm, S = %.4f, CPML %d cells\n", mode.c_str(), nx,
+                ny, nz, DX * 1e6, g.courant(), NPML);
+    std::printf("Sphere R = %.1f cells = %.3f mm, TFSF box x[%d,%d] y[%d,%d] z[%d,%d]\n", R,
+                R * DX * 1e3, box[0], box[1], box[2], box[3], box[4], box[5]);
+
+    int nstep = nmax;
+    double win_max = 0, last_win = 0;
+    for (int n = 0; n < nstep; ++n) {
+        g.update_H();
+        tf.correct_H(g);
+        tf.step_H();
+        g.update_E();
+        tf.correct_E(g);
+        tf.step_E(gauss_sine((n + 1) * g.dt, t0, tau, f0));
+
+        win_max = std::max(win_max, fb.accumulate(g, n));
+        if ((n + 1) % window == 0) {
+            last_win = win_max;
+            // leak mode: the surface field is round-off noise, so stop once the pulse has passed
+            if (n >= nmin && (mode == "leak" || win_max < DECAY * fb.max_e)) nstep = n + 1;
+            win_max = 0;
         }
-    }
-
-    std::cout << "3D FDTD + CPML  " << NX << "×" << NY << "×" << NZ
-              << "  f=" << F_CW/1e9 << " GHz"
-              << "  S=" << S_C
-              << "  DT=" << DT << " s"
-              << "  NSTEP=" << NSTEP << "\n";
-    std::cout << "CPML: NPML=" << NPML
-              << "  sigma_max=" << SIGMA_MAX << " /s"
-              << "  kappa_max=" << KAPPA_MAX
-              << "  alpha_max=" << ALPHA_MAX << " /s\n\n";
-
-    double prev_r = 0.0, prev_t = 0.0;
-
-    //   Main loop   
-    for (int n = 0; n < NSTEP; ++n)
-    {
-        const double t = n * DT;
-
-        // 1. H update (CPML)
-        update_H();
-
-        // 2. E update (CPML)
-        update_E();
-
-        // 3. Soft CW source injection
-        {
-            const double ramp = (n < T_RAMP)
-                ? 0.5 * (1.0 - std::cos(M_PI * n / T_RAMP))
-                : 1.0;
-            Ez[SRC_X][SRC_Y][SRC_Z] += ramp * std::sin(W_CW * t);
+        max_inc = std::max(max_inc, std::abs(tf.ez1[c]));
+        for (size_t q = 0; q < freqs.size(); ++q) {
+            const double w = 2 * M_PI * freqs[q];
+            Einc[q] += tf.ez1[c] * std::polar(1.0, -w * (n + 1.0) * g.dt);
+            Hinc[q] += 0.5 * (tf.hy1[c - 1] + tf.hy1[c]) * std::polar(1.0, -w * (n + 0.5) * g.dt);
         }
-
-        //   Diagnostics   
-
-        // ① Phase velocity (ramp window only — CW steady-state has no propagating front)
-        if (n <= T_RAMP && n % 2 == 0) {
-            const double r = wavefront_radius_3d();
-            double vph = 0.0;
-            if (n > 0 && prev_r > 0.0 && r > prev_r)
-                vph = (r - prev_r) / (t - prev_t);
-            if (r > 0.0) {
-                std::fprintf(f_pv, "%d,%.6e,%.6e,%.6e\n", n, t, r, vph);
-                pv_recs.push_back({n, t, r, vph});
+        if (grin) {
+            const cplx ph = std::polar(1.0, -2 * M_PI * f_map * (n + 1.0) * g.dt);
+            #pragma omp parallel for schedule(static)
+            for (int i = 0; i <= nx; ++i) {
+                inc_line[i] += tf.ez1[i] * ph;
+                for (int j = 0; j <= ny; ++j)  // Ez at z = c−½ and c+½ → average onto z = c
+                    slice[size_t(i) * (ny + 1) + j] += 0.5 * (g.at(EZ, i, j, c - 1) + g.at(EZ, i, j, c)) * ph;
             }
-            prev_r = r; prev_t = t;
         }
-
-        // ② Probe records
-        probe1_ts.push_back(Ez[P1_X][SRC_Y][SRC_Z]);
-        probe2_ts.push_back(Ez[P2_X][SRC_Y][SRC_Z]);
-        std::fprintf(f_disp, "%d,%.6e,%.6e,%.6e\n", n, t,
-                     Ez[P1_X][SRC_Y][SRC_Z], Ez[P2_X][SRC_Y][SRC_Z]);
-
-        // ③ SWR envelope (last SWR_WINDOW steps)
-        if (n >= NSTEP - SWR_WINDOW) {
-            for (int i = 0; i < NX; ++i)
-                swr_max[i] = std::max(swr_max[i],
-                                      std::abs(Ez[i][SRC_Y][SRC_Z]));
-        }
-
-        // ④ Ez slice snapshot at z=SRC_Z (post-ramp)
-        if (n > T_RAMP && n % SNAP == 0) {
-            for (int i = 0; i < NX; ++i)
-             for (int j = 0; j < NY; ++j)
-                std::fprintf(f_snap, "%d,%d,%d,%.6e\n",
-                             n, i, j, Ez[i][j][SRC_Z]);
-        }
-
-        if (n % 100 == 0)
-            std::cout << "  step " << n << "/" << NSTEP
-                      << "  Ez_src = " << Ez[SRC_X][SRC_Y][SRC_Z] << "\n";
+        if (n % 1000 == 0) std::printf("  step %d\n", n);
     }
 
-    // Write SWR scan
-    std::fprintf(f_swr, "x_cell,x_m,max_ez_envelope\n");
-    for (int i = 0; i < NX; ++i)
-        std::fprintf(f_swr, "%d,%.6e,%.6e\n", i, i*DX, swr_max[i]);
+    std::printf("\nStopped after %d steps; surface |E| in the last %d steps / peak = %.2e%s\n", nstep, window,
+                last_win / fb.max_e, (mode == "leak" || last_win < DECAY * fb.max_e) ? "" : "  (WARNING: not decayed)");
 
-    std::fclose(f_snap); std::fclose(f_pv);
-    std::fclose(f_disp); std::fclose(f_swr);
+    if (mode == "leak") {
+        std::printf("TFSF leakage: max |E_scat| on flux surface / max |E_inc| = %.2e  (%.1f dB)\n",
+                    fb.max_e / max_inc, 20 * std::log10(fb.max_e / max_inc));
+        write_meta(mode, g, cx, cy, cz, 0, box, flux_lo, flux_hi, 0);
+        return 0;
+    }
 
-    std::cout << "\nSimulation complete.\n";
-    std::cout << "   ./data_outputs/3D_slice.csv            — Ez(x,y) snapshots at z=SRC_Z\n";
-    std::cout << "   ./data_outputs/phase_vel_3D.csv        — leading-edge radius\n";
-    std::cout << "   ./data_outputs/dispersion_3D.csv       — Ez probe time series\n";
-    std::cout << "   ./data_outputs/swr_scan_3D.csv         — |Ez| envelope along x\n";
-    std::cout << "   ./data_outputs/dielectric_slice_3D.csv — eps_r(x,y) at z=SRC_Z\n";
+    if (!grin) {
+        const double a = R * DX;
+        const std::string qfile = "./data_outputs/mie_qsca_R" + std::to_string(int(R)) + ".csv";
+        FILE* fp = std::fopen(qfile.c_str(), "w");
+        std::fprintf(fp, "f_Hz,size_param,Q_fdtd,Q_mie,rel_err\n");
+        std::printf("\n  f [GHz]   x=ka    Q_sca FDTD   Q_sca Mie   rel. err\n");
+        double worst = 0, sum = 0;
+        for (size_t q = 0; q < freqs.size(); ++q) {
+            const double I = 0.5 * std::real(-Einc[q] * std::conj(Hinc[q]));   // |S_inc|
+            const double Q = fb.power(q, DX) / (I * M_PI * a * a);
+            const double x = 2 * M_PI * freqs[q] * a / C0;
+            const double Qm = mie_qsca(2.0, x);
+            const double e = Q / Qm - 1.0;
+            worst = std::max(worst, std::abs(e));
+            sum += std::abs(e);
+            std::fprintf(fp, "%.6e,%.6f,%.8e,%.8e,%.6e\n", freqs[q], x, Q, Qm, e);
+            if (q % 4 == 0) std::printf("  %6.1f   %6.3f   %10.5f   %10.5f   %+7.2f %%\n", freqs[q] / 1e9, x, Q, Qm, 100 * e);
+        }
+        std::fclose(fp);
+        std::printf("\nQ_sca vs Mie (εr = 4, R = %.0f cells, %zu freqs): mean |err| = %.2f %%, max |err| = %.2f %%\n",
+                    R, freqs.size(), 100 * sum / freqs.size(), 100 * worst);
 
-    print_summary();
+        fp = std::fopen("./data_outputs/mie_curve.csv", "w");
+        std::fprintf(fp, "size_param,Q_mie\n");
+        for (int q = 0; q <= 600; ++q) {
+            const double x = 0.3 + q * (4.0 - 0.3) / 600;
+            std::fprintf(fp, "%.6f,%.8e\n", x, mie_qsca(2.0, x));
+        }
+        std::fclose(fp);
+        write_meta(mode, g, cx, cy, cz, R, box, flux_lo, flux_hi, 0);
+        std::printf("Written: %s, ./data_outputs/mie_curve.csv, 3D_mie_meta.csv\n", qfile.c_str());
+        return 0;
+    }
+
+    // ── GRIN: total-field intensity map |Ez/E0|² at 75 GHz on z = c ────────────────────────
+    const cplx E0 = Einc[0];
+    FILE* fp = std::fopen("./data_outputs/grin_slice.csv", "w");
+    std::fprintf(fp, "x_cell,y_cell,intensity,eps_r\n");
+    double peak = 0;
+    int pi_ = 0, pj = 0;
+    for (int i = 0; i <= nx; ++i)
+        for (int j = 0; j <= ny; ++j) {
+            cplx e = slice[size_t(i) * (ny + 1) + j];
+            const bool total = i >= box[0] && i <= box[1] && j >= box[2] && j <= box[3];
+            if (!total) e += inc_line[i];            // scattered region: add the incident field back
+            const double I = std::norm(e / E0);
+            const double r = std::hypot(i - cx, j - cy);
+            const double er = r < R ? 1.0 + 3.0 * (1.0 - r / R) : 1.0;
+            std::fprintf(fp, "%d,%d,%.6e,%.4f\n", i, j, I, er);
+            const bool interior = i > NPML && i < nx - NPML && j > NPML && j < ny - NPML;
+            if (interior && I > peak) { peak = I; pi_ = i; pj = j; }
+        }
+    std::fclose(fp);
+    const double lam = C0 / f_map;
+    std::printf("\nGRIN sphere at %.0f GHz: peak |Ez/E0|² = %.2f at x − x_c = %+.1f cells (%+.2f λ, %+.2f R), "
+                "y − y_c = %+d cells\n", f_map / 1e9, peak, pi_ - cx, (pi_ - cx) * DX / lam, (pi_ - cx) / R,
+                int(pj - cy));
+    write_meta(mode, g, cx, cy, cz, R, box, flux_lo, flux_hi, f_map);
+    std::printf("Written: ./data_outputs/grin_slice.csv, 3D_grin_meta.csv\n");
     return 0;
 }

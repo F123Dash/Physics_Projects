@@ -1,419 +1,265 @@
+"""
+FDTD 3D - validation and result figures.
+
+Reads the CSVs written by 3D.cpp, cavity.cpp and cpml_test.cpp (any missing file is
+skipped) and writes PNG + PDF figures to results_outputs/:
+  fig1_geometry    TFSF / CPML / flux-surface layout of the Mie and GRIN runs
+  fig2_mie         Q_sca of the εr = 4 sphere: FDTD (each resolution) vs Mie theory
+  fig3_grin        |Ez/E0|² at 75 GHz around the GRIN sphere (z = centre plane)
+  fig4_cavity      PEC-cavity resonances vs discrete-Yee and continuum frequencies
+  fig5_cpml        CPML reflection error vs σ_max
+"""
+
+import glob
 import os
+import re
 import sys
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-from matplotlib.patches import Rectangle
-
-#   Constants (must match 3D_fdtd.cpp)  
-C0     = 2.99792458e8
-DX     = 7e-5           # m
-DT     = 0.99 * DX / (C0 * np.sqrt(3.0))
-NX     = 160
-SRC_X  = NX // 2        # 80
-SRC_Y  = NX // 2        # 80
-F_CW   = 75e9           # Hz
-W_CW   = 2 * np.pi * F_CW
-NPML   = 15
-P1_X   = SRC_X + 50     # 130
-P2_X   = SRC_X + 58     # 138
-NSTEP  = 2500
-T_RAMP = 120
-SPHERE_R_CELLS = 40
-SPHERE_R   = SPHERE_R_CELLS * DX   # 2.8 mm
-SPHERE_EPS = 4.0
-
-S_C    = C0 * DT / DX
-arg    = np.sin(W_CW * DT / 2) / S_C
-k_th   = (2 / DX) * np.arcsin(np.clip(arg, -1, 1))
-vph_th = W_CW / k_th    # theoretical phase velocity [m/s]
-lam    = C0 / F_CW      # free-space wavelength [m]
+import matplotlib.patches as mpatches
+from matplotlib.colors import LinearSegmentedColormap
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = os.path.join(HERE, "data_outputs")
+OUT = os.path.join(HERE, "results_outputs")
+C0 = 2.99792458e8
+
+# Categorical slots 1-3 (validated: CVD-safe on white; aqua < 3:1 so every series
+# also carries its own marker shape and a legend entry)
+BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
+SERIES = [(BLUE, "o"), (ORANGE, "s"), (AQUA, "^")]
+INK, INK2, GRID = "#1f1f1e", "#5f5e5a", "#e4e3df"
+# Sequential single-hue ramp (light → dark blue) for intensity maps
+SEQ = LinearSegmentedColormap.from_list(
+    "seq_blue", ["#fcfcfb", "#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"])
 
 plt.rcParams.update({
-    "figure.facecolor":  "white",
-    "axes.facecolor":    "white",
-    "axes.edgecolor":    "black",
-    "axes.labelcolor":   "black",
-    "axes.titlecolor":   "black",
-    "xtick.color":       "black",
-    "ytick.color":       "black",
-    "grid.color":        "0.85",
-    "grid.linestyle":    "-",
-    "grid.linewidth":    0.5,
-    "text.color":        "black",
-    "font.size":         11,
-    "axes.titlesize":    12,
-    "axes.labelsize":    11,
-    "legend.frameon":    True,
-    "legend.framealpha": 0.9,
-    "lines.linewidth":   1.6,
+    "figure.facecolor": "white", "axes.facecolor": "white",
+    "axes.edgecolor": INK2, "axes.labelcolor": INK, "axes.titlecolor": INK,
+    "xtick.color": INK2, "ytick.color": INK2, "text.color": INK,
+    "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.6,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "font.size": 10, "axes.titlesize": 11, "legend.frameon": False,
+    "lines.linewidth": 2.0, "lines.markersize": 6,
+    "pdf.fonttype": 42, "ps.fonttype": 42,
 })
-plt.rcParams["pdf.fonttype"] = 42   # TrueType -- editable in Illustrator/Inkscape
-plt.rcParams["ps.fonttype"]  = 42
-
-# Muted scientific color palette (accessible on white)
-C_BLUE   = "#2166ac"
-C_RED    = "#d6604d"
-C_GREEN  = "#4dac26"
-C_ORANGE = "#e08214"
-PML_COL  = "#aaaaaa"  # gray for CPML annotation lines
 
 
-def load(filename):
-    path = os.path.join(HERE, filename)
+def load(name):
+    path = os.path.join(DATA, name)
     if not os.path.exists(path):
-        print(f"[WARN] {filename} not found — skipping.", file=sys.stderr)
+        print(f"  [skip] {name} not found", file=sys.stderr)
         return None
     return pd.read_csv(path)
 
 
+def meta(mode):
+    df = load(f"3D_{mode}_meta.csv")
+    return None if df is None else dict(zip(df["key"], df["value"].astype(float)))
+
+
 def savefig(fig, name):
-    """Save PNG (400 dpi) and vector PDF."""
-    base = os.path.join(HERE, name)
-    os.makedirs(os.path.dirname(base), exist_ok=True)
-    fig.savefig(base, dpi=400, bbox_inches="tight")
-    pdf_path = base.replace(".png", ".pdf")
-    fig.savefig(pdf_path, bbox_inches="tight")
-    print(f"  saved -> {name}  +  {os.path.basename(pdf_path)}")
+    os.makedirs(OUT, exist_ok=True)
+    base = os.path.join(OUT, name)
+    fig.savefig(base + ".png", dpi=200, bbox_inches="tight")
+    fig.savefig(base + ".pdf", bbox_inches="tight")
     plt.close(fig)
+    print(f"  saved -> results_outputs/{name}.png + .pdf")
 
 
-def _cpml_lines(ax):
-    """Dashed CPML boundary lines on an imshow axis (mm units)."""
-    pml_mm = NPML * DX * 1e3
-    dom_mm = NX * DX * 1e3 - pml_mm
-    for v in [pml_mm, dom_mm]:
-        ax.axvline(v, color=PML_COL, lw=1.0, ls="--")
-        ax.axhline(v, color=PML_COL, lw=1.0, ls="--")
-
-
-def _sphere_circle(ax, **kw):
-    """Sphere boundary circle on a mm-unit axis."""
-    import matplotlib.patches as mpatches
-    centre = (SRC_X * DX * 1e3, SRC_Y * DX * 1e3)
-    circ = mpatches.Circle(centre, SPHERE_R * 1e3,
-                           fill=False, edgecolor=C_RED, lw=1.5, ls="--", **kw)
-    ax.add_patch(circ)
-
-
-#   
-# Fig 1 — Simulation geometry
-#   
+# Fig 1 — geometry (x-y cut through the sphere centre)
 def plot_geometry():
-    """Fig 1: CPML domain, GRIN sphere, source, and probe locations."""
-    import matplotlib.patches as mpatches
-    dom_mm  = NX * DX * 1e3
-    pml_mm  = NPML * DX * 1e3
-    free_mm = dom_mm - 2 * pml_mm
-    src_mm  = SRC_X * DX * 1e3
-    sph_mm  = SPHERE_R * 1e3
-    p1_mm   = P1_X * DX * 1e3
-    p2_mm   = P2_X * DX * 1e3
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-
-    # CPML absorbing layers
-    for (x0, y0, w, h) in [
-        (0,               0,              dom_mm, pml_mm),
-        (0,      dom_mm - pml_mm,         dom_mm, pml_mm),
-        (0,               pml_mm,         pml_mm, free_mm),
-        (dom_mm - pml_mm, pml_mm,         pml_mm, free_mm),
-    ]:
-        ax.add_patch(mpatches.Rectangle((x0, y0), w, h,
-                                        facecolor="0.88", edgecolor="none"))
-
-    # Computation domain interior
-    ax.add_patch(mpatches.Rectangle((pml_mm, pml_mm), free_mm, free_mm,
-                                    facecolor="white", edgecolor="black", lw=1.0))
-    ax.text(pml_mm / 2, dom_mm / 2, "CPML", ha="center", va="center",
-            fontsize=8, color="0.5", rotation=90)
-
-    # GRIN sphere
-    ax.add_patch(mpatches.Circle((src_mm, src_mm), sph_mm,
-                                  facecolor="#c6dbef", edgecolor=C_BLUE,
-                                  lw=1.5))
-    ax.add_patch(mpatches.Rectangle((0, 0), dom_mm, dom_mm,
-                                    fill=False, edgecolor="black", lw=1.0))
-
-    # Source and probes
-    ax.plot(src_mm, src_mm, "k*", ms=10, zorder=5)
-    ax.plot(p1_mm, src_mm, "^", color=C_BLUE, ms=8, zorder=5)
-    ax.plot(p2_mm, src_mm, "s", color=C_RED, ms=8, zorder=5)
-
-    # Annotations
-    ax.annotate("", xy=(src_mm + sph_mm, src_mm), xytext=(src_mm, src_mm),
-                arrowprops=dict(arrowstyle="->", color=C_BLUE, lw=1.0))
-    ax.text(src_mm + sph_mm / 2, src_mm - sph_mm * 0.35,
-            f"R = {sph_mm:.1f} mm", ha="center", fontsize=8, color=C_BLUE)
-    ax.annotate("", xy=(pml_mm, dom_mm * 0.04), xytext=(0, dom_mm * 0.04),
-                arrowprops=dict(arrowstyle="<->", color="0.5", lw=0.8))
-    ax.text(pml_mm / 2, dom_mm * 0.07, f"{pml_mm:.1f} mm",
-            ha="center", fontsize=7, color="0.4")
-
-    ax.set_xlim(0, dom_mm)
-    ax.set_ylim(0, dom_mm)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x (mm)")
-    ax.set_ylabel("y (mm)")
-    ax.set_title(
-        f"Simulation geometry\n"
-        f"{NX}\u00d7{NX}\u00d7{NX} Yee cells, "
-        f"\u0394x = {DX*1e6:.0f}\u202f\u03bcm, "
-        f"\u03bb/\u0394x \u2248 {lam/DX:.0f}, CPML = {NPML} cells"
-    )
+    setups = [(m, meta(m)) for m in ("mie", "grin")]
+    setups = [(m, d) for m, d in setups if d is not None]
+    if not setups:
+        return
+    fig, axes = plt.subplots(1, len(setups), figsize=(5.2 * len(setups), 4.6), squeeze=False)
+    for ax, (mode, d) in zip(axes[0], setups):
+        nx, ny, npml = d["nx"], d["ny"], d["npml"]
+        ax.add_patch(mpatches.Rectangle((0, 0), nx, ny, facecolor="#ecebe7", edgecolor=INK2, lw=1))
+        ax.add_patch(mpatches.Rectangle((npml, npml), nx - 2 * npml, ny - 2 * npml,
+                                        facecolor="white", edgecolor=INK2, lw=0.8))
+        ax.add_patch(mpatches.Rectangle((d["flux_x0"], d["flux_y0"]), d["flux_x1"] - d["flux_x0"],
+                                        d["flux_y1"] - d["flux_y0"], fill=False, edgecolor=ORANGE,
+                                        lw=1.2, ls=":"))
+        ax.add_patch(mpatches.Rectangle((d["i0"], d["j0"]), d["i1"] - d["i0"], d["j1"] - d["j0"],
+                                        fill=False, edgecolor=BLUE, lw=1.5, ls="--"))
+        ax.add_patch(mpatches.Circle((d["cx"], d["cy"]), d["R_cells"], facecolor="#cde2fb",
+                                     edgecolor=BLUE, lw=1.5))
+        ax.annotate("", xy=(d["i0"] + 14, d["j1"] - 6), xytext=(d["i0"] + 2, d["j1"] - 6),
+                    arrowprops=dict(arrowstyle="->", color=INK, lw=1.2))
+        ax.text(d["i0"] + 2, d["j1"] - 3, "k (+x), E ∥ z", fontsize=8, color=INK)
+        ax.text(npml / 2, ny / 2, "CPML", rotation=90, ha="center", va="center", fontsize=8, color=INK2)
+        ax.text(d["i0"] + 1, d["j0"] + 1.5, "TFSF box", fontsize=8, color=BLUE)
+        ax.text(d["flux_x1"] - 1, d["flux_y1"] + 1, "flux surface", fontsize=8, color=ORANGE, ha="right")
+        ax.set_xlim(0, nx)
+        ax.set_ylim(0, ny)
+        ax.set_aspect("equal")
+        ax.grid(False)
+        ax.set_xlabel("x (cells)")
+        ax.set_ylabel("y (cells)")
+        title = ("Mie test: εr = 4 sphere" if mode == "mie" else "GRIN sphere εr = 1 + 3(1 − r/R)")
+        ax.set_title(f"{title}\n{int(nx)}×{int(ny)}×{int(d['nz'])} cells, Δ = {d['dx']*1e6:.0f} µm, "
+                     f"R = {d['R_cells']:.0f} cells", fontsize=10)
     fig.tight_layout()
-    savefig(fig, "./results_outputs/fig1_geometry.png")
+    savefig(fig, "fig1_geometry")
 
 
-#   
-# Fig 3 — Ez(x,y) wave propagation snapshots  (2×2 panel)
-#   
-def plot_snapshots(df):
-    """Fig 3: Four Ez(x,y) snapshots at physically meaningful times (2x2 grid)."""
+# Fig 2 — Mie validation
+def plot_mie():
+    files = sorted(glob.glob(os.path.join(DATA, "mie_qsca_R*.csv")),
+                   key=lambda p: int(re.search(r"R(\d+)", p).group(1)))
+    curve = load("mie_curve.csv")
+    if not files or curve is None:
+        return
+    fig, (ax, axe) = plt.subplots(2, 1, figsize=(7, 6.2), sharex=True,
+                                  gridspec_kw=dict(height_ratios=[2, 1]))
+    xlim = None
+    ax.plot(curve["size_param"], curve["Q_mie"], color=INK2, lw=1.5, label="Mie theory")
+    for (col, mk), path in zip(SERIES, files):
+        R = int(re.search(r"R(\d+)", path).group(1))
+        d = pd.read_csv(path)
+        lab = f"FDTD, R = {R} cells"
+        ax.plot(d["size_param"], d["Q_fdtd"], mk, color=col, ms=6, mec="white", mew=0.8, label=lab)
+        mean = 100 * d["rel_err"].abs().mean()
+        axe.plot(d["size_param"], 100 * d["rel_err"], "-" + mk, color=col, lw=1.5, ms=5,
+                 mec="white", mew=0.8, label=f"R = {R}: mean |err| {mean:.1f} %")
+        xlim = (d["size_param"].min() - 0.05, d["size_param"].max() + 0.05)
+    ax.set_xlim(*xlim)
+    ax.set_ylabel("Q_sca = C_sca / πa²")
+    ax.set_title("Scattering efficiency of a dielectric sphere (εr = 4, a = 1.4 mm), FDTD vs Mie")
+    ax.legend(loc="upper left")
+    axe.axhline(0, color=INK2, lw=0.8)
+    axe.set_xlabel("size parameter x = ka")
+    axe.set_ylabel("FDTD / Mie − 1  (%)")
+    axe.legend(loc="upper right", fontsize=8)
+    fig.tight_layout()
+    savefig(fig, "fig2_mie")
+
+
+# Fig 3 — GRIN focusing map
+def plot_grin():
+    df, d = load("grin_slice.csv"), meta("grin")
+    if df is None or d is None:
+        return
+    nx, ny, npml = int(df["x_cell"].max()) + 1, int(df["y_cell"].max()) + 1, int(d["npml"])
+    I = np.zeros((ny, nx))
+    I[df["y_cell"].values, df["x_cell"].values] = df["intensity"].values
+    lam_cells = C0 / d["f_map_Hz"] / d["dx"]
+    x = (np.arange(nx) - d["cx"]) / lam_cells
+    y = (np.arange(ny) - d["cy"]) / lam_cells
+    sl = (slice(npml, ny - npml), slice(npml, nx - npml))   # hide the CPML
+    Rl = d["R_cells"] / lam_cells
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11, 4.4), gridspec_kw=dict(width_ratios=[1.6, 1]))
+    im = ax.imshow(I[sl], origin="lower", cmap=SEQ, vmin=0,
+                   extent=[x[npml], x[nx - npml - 1], y[npml], y[ny - npml - 1]], aspect="equal")
+    ax.add_patch(mpatches.Circle((0, 0), Rl, fill=False, edgecolor="white", lw=1.2, ls="--"))
+    iy, ix = np.unravel_index(np.argmax(I[sl]), I[sl].shape)
+    fx, fy = x[ix + npml], y[iy + npml]
+    ax.plot(fx, fy, "+", color=ORANGE, ms=12, mew=2)
+    ax.annotate(f"peak |E/E0|² = {I[sl].max():.1f}\nx = {fx:+.2f} λ", xy=(fx, fy),
+                xytext=(fx + 0.45, fy + 0.5), color=INK, fontsize=9,
+                arrowprops=dict(arrowstyle="-", color=INK, lw=0.8))
+    ax.grid(False)
+    ax.set_xlabel("x / λ   (wave travels +x)")
+    ax.set_ylabel("y / λ")
+    ax.set_title(f"|Ez / E0|² at {d['f_map_Hz']/1e9:.0f} GHz, plane z = sphere centre")
+    fig.colorbar(im, ax=ax, label="|Ez / E0|²", shrink=0.9)
+
+    jc = int(round(d["cy"]))
+    ax2.plot(x[npml:nx - npml], I[jc, npml:nx - npml], color=BLUE, label="|Ez/E0|² on axis")
+    ax2.axvspan(-Rl, Rl, color="#cde2fb", alpha=0.6, lw=0, label="sphere")
+    ax2.axhline(1, color=INK2, lw=0.8, ls=":")
+    ax2.text(x[npml] + 0.05, 1.15, "incident level", fontsize=8, color=INK2)
+    ax2.set_xlabel("x / λ")
+    ax2.set_ylabel("|Ez / E0|²")
+    ax2.set_title("Cut along the propagation axis (y = z = centre)")
+    ax2.legend(loc="upper left")
+    fig.tight_layout()
+    savefig(fig, "fig3_grin")
+
+
+# Fig 4 — cavity dispersion test
+def plot_cavity():
+    modes, probe = load("cavity_modes.csv"), load("cavity_probe_1x.csv")
+    if modes is None or probe is None:
+        return
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.2))
+
+    ez = probe["ez"].values
+    dt = probe["time_s"].values[1] - probe["time_s"].values[0]
+    w = np.hanning(len(ez))
+    spec = np.abs(np.fft.rfft(ez * w))
+    f = np.fft.rfftfreq(len(ez), dt)
+    fmax = modes["f_cont_Hz"].max() * 1.05
+    m = (f > modes["f_cont_Hz"].min() * 0.9) & (f < fmax)
+    ax.semilogy(f[m] / 1e9, spec[m] / spec[m].max(), color=BLUE, lw=1.2, label="FDTD probe spectrum")
+    for i, row in modes.iterrows():
+        ax.axvline(row["f_cont_Hz"] / 1e9, color=INK2, lw=0.8, ls=":",
+                   label="continuum mode" if i == 0 else None)
+        ax.axvline(row["f_yee_coarse_Hz"] / 1e9, color=ORANGE, lw=0.8, ls="--",
+                   label="discrete-Yee mode" if i == 0 else None)
+    ax.set_xlabel("frequency (GHz)")
+    ax.set_ylabel("|Ez(f)| (normalised)")
+    ax.set_title("PEC cavity 12×14×17 cells: Hann-windowed spectrum")
+    ax.set_ylim(1e-6, 2)
+    ax.legend(loc="lower right", fontsize=8, framealpha=0.9, frameon=True, edgecolor=GRID)
+
+    cpl_c = modes["cells_per_lambda_coarse"].values
+    for (col, mk), tag, cpl, lab in [(SERIES[0], "coarse", cpl_c, "Δ = 70 µm"),
+                                     (SERIES[1], "fine", 2 * cpl_c, "Δ = 35 µm")]:
+        err_c = np.abs(modes[f"f_meas_{tag}_Hz"] / modes["f_cont_Hz"] - 1)
+        err_y = np.abs(modes[f"f_meas_{tag}_Hz"] / modes[f"f_yee_{tag}_Hz"] - 1)
+        ax2.loglog(cpl, err_c, mk, color=col, mec="white", mew=0.8, ms=7, label=f"vs continuum, {lab}")
+        ax2.loglog(cpl, np.maximum(err_y, 1e-12), mk, color=col, mfc="white", mew=1.4, ms=7,
+                   label=f"vs discrete Yee, {lab}")
+    xs = np.array([cpl_c.min() * 0.9, 2 * cpl_c.max() * 1.1])
+    ax2.loglog(xs, 0.25 * (xs / xs[0]) ** -2 * 1e-2, color=INK2, lw=1, ls="--", label="∝ (λ/Δ)⁻²")
+    ax2.set_xlabel("cells per wavelength λ/Δ")
+    ax2.set_ylabel("|f_meas / f_ref − 1|")
+    ax2.set_title("Frequency error: 2nd-order vs continuum, ~0 vs Yee theory")
+    ax2.legend(fontsize=7.5, loc="center left")
+    fig.tight_layout()
+    savefig(fig, "fig4_cavity")
+
+
+# Fig 5 — CPML σ scan
+def plot_cpml():
+    df = load("cpml_scan.csv")
     if df is None:
         return
-    all_steps = sorted(df["step"].unique())
-
-    step_sphere_hit  = int(T_RAMP + SPHERE_R_CELLS / S_C)
-    step_thru_sphere = step_sphere_hit + int(2 * SPHERE_R_CELLS / S_C)
-    step_scatter     = step_thru_sphere + int(SPHERE_R_CELLS / S_C)
-    step_steady      = max(all_steps)
-
-    target_steps = [
-        T_RAMP + 20,
-        step_sphere_hit,
-        step_thru_sphere,
-        step_steady,
-    ]
-    picks = []
-    for t in target_steps:
-        closest = min(all_steps, key=lambda s: abs(s - t))
-        if closest not in picks:
-            picks.append(closest)
-    while len(picks) < 4:
-        for s in all_steps:
-            if s not in picks:
-                picks.append(s)
-                break
-    picks = sorted(picks[:4])
-
-    panel_labels = ["(a) propagation", "(b) sphere interaction",
-                    "(c) refraction / focusing", "(d) steady state"]
-    global_max = np.percentile(np.abs(df["ez"]), 99.0) or 1.0
-    ext = [0, NX * DX * 1e3, 0, NX * DX * 1e3]
-
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    fig.suptitle(
-        f"Ez(x, y) snapshots  —  f = {F_CW/1e9:.0f} GHz, "
-        f"R = {SPHERE_R*1e3:.1f} mm, \u03b5\u1d9c = {SPHERE_EPS}",
-        fontsize=12)
-
-    for ax, step, lbl in zip(axes.flat, picks, panel_labels):
-        sub  = df[df["step"] == step]
-        nx_  = sub["x"].max() + 1
-        ny_  = sub["y"].max() + 1
-        grid = np.zeros((ny_, nx_))
-        grid[sub["y"].values, sub["x"].values] = sub["ez"].values
-
-        im = ax.imshow(grid, origin="lower", aspect="equal",
-                       cmap="RdBu_r", vmin=-global_max, vmax=global_max, extent=ext)
-        _cpml_lines(ax)
-        _sphere_circle(ax)
-        ax.plot(SRC_X * DX * 1e3, SRC_Y * DX * 1e3, "k*", ms=6)
-        t_ns = step * DT * 1e9
-        ax.set_title(f"{lbl}  (t = {t_ns:.2f} ns)", fontsize=9)
-        ax.set_xlabel("x (mm)")
-        ax.set_ylabel("y (mm)")
-        fig.colorbar(im, ax=ax, label="Ez (V/m)", pad=0.02, shrink=0.85, fraction=0.04)
-
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    scan = df[df["label"] == "scan"]
+    for (col, mk), kap in zip(SERIES, sorted(scan["kappa_max"].unique())):
+        s = scan[scan["kappa_max"] == kap]
+        ax.plot(s["sigma_factor"], s["err_worst_dB"], "-" + mk, color=col, mec="white", mew=0.8,
+                label=f"κ_max = {kap:g}, {int(s['npml'].iloc[0])} cells")
+    orig = df[df["label"] == "original"]
+    if len(orig):
+        o = orig.iloc[0]
+        ax.plot(o["sigma_factor"], o["err_worst_dB"], "D", color=INK, ms=7,
+                label=f"original (σ = 4e13 /s, κ = 5, {int(o['npml'])} cells)")
+    ctrl = df[df["label"].str.startswith("control")]
+    if len(ctrl):
+        ax.axhline(ctrl["err_worst_dB"].iloc[0], color=INK2, lw=1, ls=":")
+        ax.text(df["sigma_factor"].max(), ctrl["err_worst_dB"].iloc[0] - 6,
+                "control: σ = 0 (PEC wall reflects)", ha="right", fontsize=8, color=INK2)
+    ax.set_xlabel("σ_max / σ_opt   (σ_opt = 0.8(m+1)/(η0 Δ), m = 3)")
+    ax.set_ylabel("worst-case error  max|E − E_ref| / max|E_ref|  (dB)")
+    ax.set_title("CPML reflection error vs reflection-free reference")
+    ax.legend(loc="center right", fontsize=8)
     fig.tight_layout()
-    savefig(fig, "./results_outputs/fig3_snapshots.png")
+    savefig(fig, "fig5_cpml")
 
 
-#   
-# Fig 4 — Steady-state |Ez| field magnitude
-#   
-def plot_steady_state(df):
-    """Fig 4: |Ez| magnitude at final snapshot (viridis, figsize=(6,5))."""
-    if df is None:
-        return
-    step = df["step"].max()
-    sub  = df[df["step"] == step]
-    nx_  = sub["x"].max() + 1
-    ny_  = sub["y"].max() + 1
-    grid = np.zeros((ny_, nx_))
-    grid[sub["y"].values, sub["x"].values] = sub["ez"].values
-    mag  = np.abs(grid)
-
-    vmax = np.percentile(mag, 99.0) or 1.0
-    ext  = [0, NX * DX * 1e3, 0, NX * DX * 1e3]
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(mag, origin="lower", aspect="equal",
-                   cmap="viridis", vmin=0, vmax=vmax, extent=ext)
-    _cpml_lines(ax)
-    _sphere_circle(ax)
-    ax.plot(SRC_X * DX * 1e3, SRC_Y * DX * 1e3, "w*", ms=10)
-    ax.plot(P1_X  * DX * 1e3, SRC_Y * DX * 1e3, "^", color=C_ORANGE, ms=7)
-    ax.plot(P2_X  * DX * 1e3, SRC_Y * DX * 1e3, "s", color=C_GREEN,  ms=7)
-
-    cb = fig.colorbar(im, ax=ax, label="|Ez| (V/m)", pad=0.02, shrink=0.85, fraction=0.04)
-    cb.ax.tick_params()
-    t_ns = step * DT * 1e9
-    ax.set_title(f"|Ez| steady state  (t = {t_ns:.2f} ns)")
-    ax.set_xlabel("x (mm)")
-    ax.set_ylabel("y (mm)")
-    fig.tight_layout()
-    savefig(fig, "./results_outputs/fig4_steady_state.png")
-
-
-#   
-# Fig 5 — Probe Ez(t) comparison
-#   
-def plot_probes(df):
-    """Fig 5: Ez(t) at P1 and P2 on shared axes (figsize=(7,4))."""
-    if df is None:
-        return
-    t  = df["time_s"].values * 1e9      # ns
-    p1 = df["ez_p1"].values
-    p2 = df["ez_p2"].values
-
-    r1 = (P1_X - SRC_X) * DX * 1e3
-    r2 = (P2_X - SRC_X) * DX * 1e3
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(t, p1, color=C_BLUE, lw=1.5)
-    ax.plot(t, p2, color=C_RED,  lw=1.5, ls="--")
-    ax.set_xlabel("Time (ns)")
-    ax.set_ylabel("Ez (V/m)")
-    ax.set_title(f"Ez probe comparison  —  f = {F_CW/1e9:.0f} GHz")
-    ax.grid(True)
-    fig.tight_layout()
-    savefig(fig, "./results_outputs/fig5_probes.png")
-
-
-#   
-# Fig 7 — Radial |Ez| decay vs 1/r theory
-#   
-def plot_envelope_scan(df):
-    if df is None:
-        return
-    x_cell = df["x_cell"].values
-    x_mm   = df["x_m"].values * 1e3
-    env    = df["max_ez_envelope"].values
-
-    # 1/r reference normalised at P1 — avoids singularity at source
-    r_ref  = (P1_X - SRC_X) * DX
-    r_all  = np.abs(x_cell - SRC_X) * DX
-    inv_r  = np.zeros_like(env)
-    mask   = r_all > 0
-    E_ref  = np.mean(env[max(0, P1_X-1):P1_X+2])  # average 3 cells to reduce noise
-    inv_r[mask] = E_ref * (r_ref / r_all[mask])
-    if SRC_X < len(inv_r):
-        inv_r[SRC_X] = env[SRC_X]
-
-    fig, (ax_lin, ax_log) = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
-
-    pml_mm = NPML * DX * 1e3
-    dom_mm = NX * DX * 1e3
-    for ax in (ax_lin, ax_log):
-        # CPML shading
-        ax.axvspan(0, pml_mm, color=PML_COL, alpha=0.15, label="CPML")
-        ax.axvspan(dom_mm - pml_mm, dom_mm, color=PML_COL, alpha=0.15)
-        ax.axvline(SRC_X * DX * 1e3, color=C_ORANGE, lw=1.0, ls=":", label="source")
-        ax.axvline(P1_X * DX * 1e3, color=C_BLUE, lw=1.0, ls="--",
-                   label=f"P1 (x={P1_X})")
-        ax.axvline(P2_X * DX * 1e3, color=C_RED, lw=1.0, ls="--",
-                   label=f"P2 (x={P2_X})")
-
-    # linear axes
-    ax_lin.plot(x_mm, env, color=C_GREEN, lw=1.8, label="|Ez| envelope")
-    ax_lin.plot(x_mm, inv_r, color=C_ORANGE, lw=1.2, ls="--", label="1/r reference")
-    ax_lin.set_ylabel("|Ez| max  [V/m]")
-    ax_lin.legend(facecolor="white", edgecolor="0.7", fontsize=8, ncol=3)
-    ax_lin.grid(True)
-
-    # log axes
-    pos_mask = env > 0
-    ax_log.semilogy(x_mm[pos_mask], env[pos_mask],
-                    color=C_GREEN, lw=1.8, label="|Ez| envelope")
-    ax_log.semilogy(x_mm[inv_r > 0], inv_r[inv_r > 0],
-                    color=C_ORANGE, lw=1.2, ls="--", label="1/r reference")
-    ax_log.set_xlabel("x [mm]")
-    ax_log.set_ylabel("|Ez| max  [V/m]  (log)")
-    ax_log.legend(facecolor="white", edgecolor="0.7", fontsize=8, ncol=3)
-    ax_log.grid(True, which="both")
-
-    # annotate CPML attenuation
-    e_in  = env[NX - NPML] if env[NX - NPML] > 0 else np.nan
-    e_mid = env[NX - NPML + 8] if env[NX - NPML + 8] > 0 else np.nan
-    if np.isfinite(e_in) and np.isfinite(e_mid) and e_mid > 0:
-        att = 20 * np.log10(e_in / e_mid)
-        ax_log.annotate(f"CPML attenuation\n≈ {att:.1f} dB / 8 cells",
-                        xy=((NX - NPML + 4) * DX * 1e3, np.sqrt(e_in * e_mid)),
-                        xytext=((NX - NPML - 15) * DX * 1e3, e_in * 0.05),
-                        arrowprops=dict(arrowstyle="->", color=PML_COL),
-                        fontsize=8, color=PML_COL,
-                        bbox=dict(boxstyle="round,pad=0.3",
-                                  facecolor="white", edgecolor=PML_COL))
-
-    fig.suptitle(f"Fig 7 — Radial |Ez| decay vs 1/r theory\n"
-                 f"3D FDTD + CPML + GRIN sphere  (f = {F_CW/1e9:.0f} GHz)",
-                 fontsize=12)
-    fig.tight_layout()
-    savefig(fig, "./results_outputs/fig7_radial_decay.png")
-
-
-#   
-# Fig 2 — Permittivity distribution (cividis)
-#   
-def plot_permittivity(df):
-    """Fig 2: GRIN sphere ε_r map (cividis colormap, figsize=(6,5))."""
-    if df is None:
-        return
-    nx_  = df["x"].max() + 1
-    ny_  = df["y"].max() + 1
-    grid = np.zeros((ny_, nx_))
-    grid[df["y"].values, df["x"].values] = df["eps_r"].values
-
-    ext = [0, NX * DX * 1e3, 0, NX * DX * 1e3]
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(grid, origin="lower", aspect="equal",
-                   cmap="cividis", vmin=1.0, vmax=SPHERE_EPS, extent=ext)
-    _cpml_lines(ax)
-    _sphere_circle(ax)
-    ax.plot(SRC_X * DX * 1e3, SRC_Y * DX * 1e3, "k*", ms=8)
-    cb = fig.colorbar(im, ax=ax, pad=0.02, shrink=0.85, fraction=0.04)
-    cb.set_label(r"$\varepsilon_r$")
-    ax.set_title(
-        f"GRIN sphere permittivity  "
-        f"(\u03b5\u1d9c = {SPHERE_EPS}, R = {SPHERE_R*1e3:.1f} mm)")
-    ax.set_xlabel("x (mm)")
-    ax.set_ylabel("y (mm)")
-    fig.tight_layout()
-    savefig(fig, "./results_outputs/fig2_permittivity.png")
-
-
-
-
-
-#   
-# Main
-#   
 if __name__ == "__main__":
-    print("Loading CSV data …")
-    df_snap = load("./data_outputs/3D_slice.csv")
-    df_disp = load("./data_outputs/dispersion_3D.csv")
-    df_eps  = load("./data_outputs/dielectric_slice_3D.csv")
-
-    print("Generating plots …")
-    plot_geometry()                    # Fig 1 — simulation domain schematic
-    plot_permittivity(df_eps)          # Fig 2 — εᵣ distribution (cividis)
-    plot_snapshots(df_snap)            # Fig 3 — 4-panel Ez snapshots
-    plot_steady_state(df_snap)         # Fig 4 — |Ez| steady-state (viridis)
-    plot_probes(df_disp)               # Fig 5 — Ez(t) probe comparison
-
+    print("Generating 3D validation figures ...")
+    plot_geometry()
+    plot_mie()
+    plot_grin()
+    plot_cavity()
+    plot_cpml()
     print("Done.")
