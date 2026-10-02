@@ -1,12 +1,12 @@
 #include "ising.hpp"
 #include <cmath>
-#include <queue>
 #include <vector>
 
 Ising2D::Ising2D(int L, std::mt19937_64& rng)
     : L_(L),
       N_(L * L),
       spins_(N_, 1),
+      in_cluster_(N_, 0),
       rng_(rng),
       unif01_(0.0, 1.0),
       site_dist_(0, L * L - 1) {}
@@ -19,14 +19,6 @@ int Ising2D::periodic(int i) const {
 
 int Ising2D::idx(int x, int y) const {
     return y * L_ + x;
-}
-
-void Ising2D::initialize_random() {
-    std::uniform_int_distribution<int> spin_dist(0, 1);
-    for (int i = 0; i < N_; ++i) {
-        spins_[i] = spin_dist(rng_) ? 1 : -1;
-    }
-    compute_total_energy_and_magnetization();
 }
 
 void Ising2D::initialize_ordered(int spin_value) {
@@ -102,48 +94,39 @@ double Ising2D::energy_per_spin() const {
 }
 
 void Ising2D::sweep_wolff() {
-    std::vector<bool> visited(N_, false);
+    // One Wolff cluster flip. A neighbour joins only if its bond test succeeds;
+    // a neighbour whose bond failed from one cluster site can still join through
+    // another, since each (site, neighbour) bond is tested independently.
     const int seed_idx = site_dist_(rng_);
     const int seed_spin = spins_[seed_idx];
-    std::queue<int> cluster_queue;
-    std::vector<int> cluster;
-    cluster_queue.push(seed_idx);
-    visited[seed_idx] = true;
-    cluster.push_back(seed_idx);
     const double wolff_prob = 1.0 - std::exp(-2.0 * beta_);
-    while (!cluster_queue.empty()) {
-        const int current_idx = cluster_queue.front();
-        cluster_queue.pop();
-        
+
+    cluster_.clear();
+    cluster_.push_back(seed_idx);
+    in_cluster_[seed_idx] = 1;
+    for (size_t head = 0; head < cluster_.size(); ++head) {
+        const int current_idx = cluster_[head];
         const int x = current_idx % L_;
         const int y = current_idx / L_;
-        
         const int neighbors[4] = {
             idx(periodic(x + 1), y),
             idx(periodic(x - 1), y),
             idx(x, periodic(y + 1)),
             idx(x, periodic(y - 1))
         };
-        
         for (int i = 0; i < 4; ++i) {
             const int neighbor_idx = neighbors[i];
-            if (!visited[neighbor_idx] && spins_[neighbor_idx] == seed_spin) {
-                visited[neighbor_idx] = true;
-                if (unif01_(rng_) < wolff_prob) {
-                    cluster.push_back(neighbor_idx);
-                    cluster_queue.push(neighbor_idx);
-                }
+            if (!in_cluster_[neighbor_idx] && spins_[neighbor_idx] == seed_spin &&
+                unif01_(rng_) < wolff_prob) {
+                in_cluster_[neighbor_idx] = 1;
+                cluster_.push_back(neighbor_idx);
             }
         }
     }
-    
-    std::vector<char> in_cluster(N_, 0);
-    for (int site_idx : cluster) {
-        in_cluster[site_idx] = 1;
-    }
 
+    // Energy change comes only from bonds crossing the cluster boundary.
     double delta_energy = 0.0;
-    for (int site_idx : cluster) {
+    for (int site_idx : cluster_) {
         const int x = site_idx % L_;
         const int y = site_idx / L_;
         const int s = spins_[site_idx];
@@ -153,18 +136,17 @@ void Ising2D::sweep_wolff() {
             idx(x, periodic(y + 1)),
             idx(x, periodic(y - 1))
         };
-
         for (int i = 0; i < 4; ++i) {
-            const int neighbor_idx = neighbors[i];
-            if (!in_cluster[neighbor_idx]) {
-                delta_energy += 2.0 * static_cast<double>(s * spins_[neighbor_idx]);
+            if (!in_cluster_[neighbors[i]]) {
+                delta_energy += 2.0 * static_cast<double>(s * spins_[neighbors[i]]);
             }
         }
     }
-    for (int site_idx : cluster) {
+    for (int site_idx : cluster_) {
         const int old_spin = spins_[site_idx];
         spins_[site_idx] = -old_spin;
         magnetization_total_ += -2 * old_spin;
+        in_cluster_[site_idx] = 0;
     }
     energy_total_ += delta_energy;
 }
