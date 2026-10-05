@@ -1,4 +1,5 @@
 #include "ising.hpp"
+#include "run_io.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -25,36 +26,10 @@ static std::vector<int> parse_sizes_csv(const std::string& csv) {
     return out;
 }
 
-std::vector<int> get_existing_sizes(const std::string& filename) {
+static std::vector<int> get_existing_sizes(const std::string& filename) {
+    // Validates the header and every row; throws on an old-format or malformed file.
     std::set<int> sizes_set;
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        return std::vector<int>();
-    }
-    
-    std::string line;
-    if (!std::getline(file, line)) {
-        return std::vector<int>();
-    }
-    
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::string cell;
-        int col = 0;
-        while (std::getline(ss, cell, ',')) {
-            if (col == 1) {
-                try {
-                    sizes_set.insert(std::stoi(cell));
-                } catch (...) {
-                }
-                break;
-            }
-            col++;
-        }
-    }
-    file.close();
-    
+    for (const RunKey& key : read_existing_keys(filename)) sizes_set.insert(key.first);
     return std::vector<int>(sizes_set.begin(), sizes_set.end());
 }
 
@@ -85,6 +60,12 @@ SimulationConfig parse_args(int argc, char** argv) {
         } else if (starts_with(arg, "--append=")) {
             cfg.sizes = parse_sizes_csv(arg.substr(9));
             cfg.append_mode = true;
+        } else if (starts_with(arg, "--fine-dt=")) {
+            cfg.fine_step = std::stod(arg.substr(10));
+        } else if (arg == "--no-adaptive") {
+            cfg.adaptive_grid = false;
+        } else if (starts_with(arg, "--series-dir=")) {
+            cfg.series_dir = arg.substr(13);
         } else if (arg == "--append") {
             cfg.append_mode = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -94,6 +75,9 @@ SimulationConfig parse_args(int argc, char** argv) {
                 << "  --tmin=1.8 --tmax=3.4 --dt=0.02\n"
                 << "  --therm=10000 --meas=50000 --stride=10\n"
                 << "  --seed=123456789 --out=./data_outputs/data.csv\n"
+                << "  --no-adaptive         Uniform T grid (use --tmin=--tmax for a single T)\n"
+                << "  --fine-dt=0.005       Adaptive-grid step in [2.1, 2.4) (0.02 -> 15 points)\n"
+                << "  --series-dir=DIR      Also write raw (m, e) time series per (T, L) to DIR\n"
                 << "  --append              Append with default sizes (skip existing)\n"
                 << "  --append=512,768      Append only specific sizes\n";
             std::exit(0);
@@ -102,7 +86,7 @@ SimulationConfig parse_args(int argc, char** argv) {
         }
     }
 
-    if (cfg.t_step <= 0.0 || cfg.t_max < cfg.t_min) {
+    if (cfg.t_step <= 0.0 || cfg.fine_step <= 0.0 || cfg.t_max < cfg.t_min) {
         throw std::runtime_error("Invalid temperature range parameters.");
     }
     if (cfg.thermal_sweeps < 0 || cfg.measurement_sweeps <= 0 || cfg.sample_stride <= 0) {
@@ -128,36 +112,4 @@ SimulationConfig parse_args(int argc, char** argv) {
     }
 
     return cfg;
-}
-
-static std::vector<double> make_uniform_grid(double t_min, double t_max, double t_step) {
-    std::vector<double> temps;
-    for (double t = t_min; t <= t_max + 1e-12; t += t_step) {
-        temps.push_back(t);
-    }
-    return temps;
-}
-
-std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step, bool adaptive) {
-    if (!adaptive) {
-        return make_uniform_grid(t_min, t_max, t_step);
-    }
-    std::vector<double> temps;
-
-    // Region 1: coarse
-    for (double t = t_min; t < 2.1 - 1e-9; t += 0.02) {
-        temps.push_back(t);
-    }
-
-    // Region 2: fine (critical region)
-    for (double t = 2.1; t < 2.4 - 1e-9; t += 0.005) {
-        temps.push_back(t);
-    }
-
-    // Region 3: coarse
-    for (double t = 2.4; t <= t_max + 1e-9; t += 0.02) {
-        temps.push_back(t);
-    }
-
-    return temps;
 }
