@@ -14,9 +14,11 @@ struct SimulationConfig {
     int measurement_sweeps = 200000;
     int sample_stride = 50;
     bool adaptive_grid = true;
+    double fine_step = 0.005;  // adaptive-grid step inside [2.1, 2.4)
     bool append_mode = false;
     std::uint64_t seed = 123456789ULL;
     std::string output_csv = "./data_outputs/data.csv";
+    std::string series_dir;  // empty: do not write raw time series
 };
 
 struct SampleAccumulator {
@@ -42,51 +44,10 @@ struct AveragedObservables {
 
 AveragedObservables finalize(const SampleAccumulator& acc);
 
-struct AutocorrResult {
-    double tau_int = 0.0;
-    double tau_stderr = 0.0;
-    int window = 0;
-    bool converged = false;
-};
-
-AutocorrResult measure_autocorrelation(
-    const std::vector<double>& timeseries,
-    int max_lag = -1
-);
-
-struct RawSample {
-    double m = 0.0;
-    double abs_m = 0.0;
-    double e = 0.0;
-};
-
-struct JackknifeObservables {
-    double chi = 0.0;
-    double chi_err = 0.0;
-    double C = 0.0;
-    double C_err = 0.0;
-    double U = 0.0;
-    double U_err = 0.0;
-    double abs_m = 0.0;
-    double abs_m_err = 0.0;
-    double e = 0.0;
-    double e_err = 0.0;
-    int n_samples = 0;
-};
-
-JackknifeObservables jackknife_observables(
-    const std::vector<RawSample>& samples,
-    int L,
-    double T
-);
-
-std::vector<double> make_temperature_grid(double t_min, double t_max, double t_step, bool adaptive = false);
-
 class Ising2D {
 public:
     Ising2D(int L, std::mt19937_64& rng);
 
-    void initialize_random();
     void initialize_ordered(int spin_value = 1);
     void set_temperature(double T);
     void sweep_metropolis();
@@ -103,6 +64,8 @@ private:
     int L_;
     int N_;
     std::vector<int> spins_;
+    std::vector<char> in_cluster_;  // Wolff scratch, all zero between calls
+    std::vector<int> cluster_;
 
     std::mt19937_64& rng_;
     std::uniform_real_distribution<double> unif01_;
@@ -116,13 +79,4 @@ private:
     double energy_total_ = 0.0;
 };
 
-int compute_adaptive_stride(
-    Ising2D& model,
-    int calibration_sweeps,
-    int min_stride,
-    int max_stride
-);
-
 SimulationConfig parse_args(int argc, char** argv);
-
-std::vector<int> get_existing_sizes(const std::string& filename);
