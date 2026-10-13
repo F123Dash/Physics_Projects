@@ -4,10 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy import stats
-from scipy.signal import savgol_filter
 
-from analysis import EXACT_TC, estimate_tc_finite_size
+from analysis import drop_partial_sizes, estimate_tc_finite_size
 from load_data import load_ising_csv
 
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -57,20 +55,12 @@ def plot_chi_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
         g = g.sort_values("T")
         t_vals = g["T"].to_numpy()
         chi_vals = g["chi"].to_numpy()
-        if len(chi_vals) > 7:
-            try:
-                chi_smooth = savgol_filter(chi_vals, min(7, len(chi_vals) // 2 * 2 + 1), 3)
-            except:
-                chi_smooth = chi_vals
-        else:
-            chi_smooth = chi_vals
-        
-        plt.plot(t_vals, chi_smooth, lw=2.0, 
+        plt.plot(t_vals, chi_vals, lw=2.0, 
                 label=rf"$L={int(L)}$", alpha=0.85)
     plt.axvline(tc_inf, color='red', linestyle='--', alpha=0.5, lw=1.5, label=rf"$T_c={tc_inf:.4f}$")
     plt.xlabel(r"Temperature $T$ (J/$k_B$)", fontsize=11)
     plt.ylabel(r"Susceptibility $\chi = N(⟨M^2⟩ - ⟨|M|⟩^2)/T$", fontsize=11)
-    plt.title("Susceptibility vs Temperature (Savitzky-Golay smoothed)")
+    plt.title("Susceptibility vs Temperature")
     plt.grid(True, alpha=0.3, which='both')
     plt.legend(fontsize=10, loc='best')
     plt.xlim(1.8, 3.4)
@@ -103,7 +93,7 @@ def plot_c_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
                 label=rf"$L={int(L)}$", alpha=0.85)
     plt.axvline(tc_inf, color='red', linestyle='--', alpha=0.5, lw=1.5, label=rf"$T_c={tc_inf:.4f}$")
     plt.xlabel(r"Temperature $T$ (J/$k_B$)", fontsize=11)
-    plt.ylabel(r"Specific Heat $C_V = (⟨E^2⟩ - ⟨E⟩^2)/T^2$", fontsize=11)
+    plt.ylabel(r"Specific Heat $C_V = N(⟨e^2⟩ - ⟨e⟩^2)/T^2$", fontsize=11)
     plt.title("Specific Heat vs Temperature")
     plt.grid(True, alpha=0.3, which='both')
     plt.legend(fontsize=10, loc='best')
@@ -111,8 +101,7 @@ def plot_c_vs_t(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
     savefig(os.path.join(outdir, "fig3_specific_heat.png"))
 
 
-def plot_tc_extrapolation(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
-    tc_by_L, _, tc_inf_stderr, _ = estimate_tc_finite_size(df)
+def plot_tc_extrapolation(tc_by_L: dict, tc_inf: float, tc_inf_stderr: float, outdir: str) -> None:
     Ls = np.array(sorted(tc_by_L.keys()), dtype=float)
     tcL = np.array([tc_by_L[int(L)] for L in Ls])
     x = 1.0 / Ls
@@ -133,68 +122,10 @@ def plot_tc_extrapolation(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: fl
     savefig(os.path.join(outdir, "fig4_tc_extrapolation.png"))
 
 
-def plot_beta_loglog(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_beta: float, outdir: str) -> None:
-    large_l_df = df[df["L"] >= 64]
-    if len(large_l_df) > 0:
-        lmax = int(large_l_df["L"].max())
-    else:
-        lmax = int(df["L"].max())
-    
-    g = df[df["L"] == lmax].sort_values("T")
-
-    dt = tc_beta - g["T"].to_numpy()
-    m = g["absM"].to_numpy()
-    
-    mask = (dt > 0.02) & (dt < 0.07) & (m > 1e-8)
-    if np.count_nonzero(mask) < 3:
-        mask = (dt > 0.01) & (dt < 0.10) & (m > 1e-8)
-    x = np.log(dt[mask])
-    y = np.log(m[mask])
-
-    if x.size < 3:
-        plt.figure(figsize=(6.5, 4.5))
-        plt.text(0.5, 0.5, "Insufficient subcritical data for $\\beta$ fit", 
-                ha="center", va="center", fontsize=12)
-        plt.axis("off")
-        savefig(os.path.join(outdir, "fig5_beta_loglog.png"))
-        return
-
-    slope, intercept, r_value, _, stderr = stats.linregress(x, y)
-    xfit = np.linspace(x.min(), x.max(), 200)
-    yfit = slope * xfit + intercept
-    y_theory = 0.125 * xfit + intercept
-    beta_err = 0.0
-    if metrics_df is not None and 'stderr' in metrics_df.columns:
-        beta_row = metrics_df[metrics_df['name'] == 'beta']
-        if len(beta_row) > 0:
-            beta_err = beta_row.iloc[0]['stderr']
-
-    plt.figure(figsize=(6.5, 4.5))
-    plt.scatter(x, y, s=60, alpha=0.7, color='C0', edgecolors='black', linewidth=1.5,
-               label=rf"$L={int(lmax)}$ data ({len(x)} pts)")
-    plt.plot(xfit, yfit, '-', color='C1', lw=2.5,
-            label=rf"Fit: $\beta = {slope:.4f} \pm {beta_err:.4f}$ ($R^2={r_value**2:.3f}$)")
-    plt.plot(xfit, y_theory, '--', color='green', lw=2, alpha=0.7,
-            label=r"Theory: $\beta = 1/8 = 0.125$")
-    
-    plt.xlabel(r"$\log(T_c - T)$", fontsize=11)
-    plt.ylabel(r"$\log(\langle |M| \rangle)$", fontsize=11)
-    plt.title(r"Critical Exponent $\beta$ (Log-Log Fit, Tight Window)")
-    plt.grid(True, alpha=0.3, which='both')
-    plt.legend(fontsize=10)
-    savefig(os.path.join(outdir, "fig5_beta_loglog.png"))
-
-
-def plot_data_collapse(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
-    beta = 0.125  # theoretical
-    if metrics_df is not None and 'value' in metrics_df.columns:
-        beta_row = metrics_df[metrics_df['name'] == 'beta']
-        if len(beta_row) > 0:
-            beta_val = beta_row.iloc[0]['value']
-            if not np.isnan(beta_val) and 0.05 < beta_val < 0.2:
-                beta = beta_val
-    
-    nu = 1.0  # theoretical ν for 2D Ising
+def plot_data_collapse(df: pd.DataFrame, tc_inf: float, outdir: str) -> None:
+    # Consistency check with the exact exponents; measured beta/nu comes from fss_analysis.py.
+    beta = 0.125
+    nu = 1.0
     
     plt.figure(figsize=(6.5, 5.0))
     for L, g in sorted(df.groupby("L"), key=lambda x: x[0]):
@@ -207,61 +138,30 @@ def plot_data_collapse(df: pd.DataFrame, metrics_df: pd.DataFrame, tc_inf: float
             plt.plot(x, y, lw=2.0, label=rf"$L={int(L)}$", alpha=0.85)
     plt.xlabel(rf"$(T - T_c) L^{{1/\nu}}$", fontsize=11)
     plt.ylabel(rf"$\langle |M| \rangle L^{{\beta/\nu}}$", fontsize=11)
-    plt.title(rf"Data Collapse ($\beta=${beta:.3f}, $\nu=${nu:.1f}, $|T-T_c| < 0.08$ K)")
+    plt.title(rf"Data Collapse, exact exponents ($\beta=1/8$, $\nu=1$, $|T-T_c| < 0.08$)")
     plt.grid(True, alpha=0.3, which='both')
     plt.legend(fontsize=10)
     savefig(os.path.join(outdir, "fig6_data_collapse.png"))
 
 
-def plot_beta_bootstrap_hist(beta_csv: str, metrics_df: pd.DataFrame, outdir: str) -> None:
-    if not os.path.exists(beta_csv):
-        return
-    b = pd.read_csv(beta_csv)["beta"].to_numpy()
-    if b.size == 0:
-        return
-    beta_mean = np.mean(b)
-    beta_std = np.std(b)
-    beta_median = np.median(b)
-    plt.figure(figsize=(6.5, 4.5))
-    plt.hist(b, bins=40, alpha=0.75, edgecolor='black', color='C0', density=False)
-    plt.axvline(beta_mean, color='C1', linestyle='-', linewidth=2.5,
-               label=rf"Mean: ${beta_mean:.4f}$")
-    plt.axvline(beta_median, color='orange', linestyle=':', linewidth=2.5,
-               label=rf"Median: ${beta_median:.4f}$")
-    plt.axvline(0.125, color='green', linestyle='--', linewidth=2,
-               label=r"Theory: $\beta = 1/8$", alpha=0.7)
-    plt.xlabel(r"$\beta$ value", fontsize=11)
-    plt.ylabel("Frequency (count)", fontsize=11)
-    plt.title(rf"Bootstrap Distribution of $\beta$ ({len(b)} resamples, std=${beta_std:.4f}$)")
-    plt.grid(True, alpha=0.3, which='both', axis='y')
-    plt.legend(fontsize=10)
-    savefig(os.path.join(outdir, "fig7_beta_bootstrap_hist.png"))
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot Ising finite-size scaling diagnostics.")
     parser.add_argument("--data", default="./data_outputs/data.csv")
-    parser.add_argument("--metrics", default="./data_outputs/analysis_metrics.csv")
-    parser.add_argument("--beta_csv", default="./data_outputs/beta_bootstrap.csv")
     parser.add_argument("--outdir", default="./plots")
     args = parser.parse_args()
 
     ensure_plot_dir(args.outdir)
 
-    df = load_ising_csv(args.data)
-    print(f"Using dynamic lattice sizes from data: {sorted(df['L'].unique().tolist())}")
-    
-    metrics_df = None
-    if os.path.exists(args.metrics):
-        metrics_df = pd.read_csv(args.metrics)
-    tc_by_L, tc_inf, tc_inf_stderr, _ = estimate_tc_finite_size(df)
+    df = drop_partial_sizes(load_ising_csv(args.data))
+
+    tc_by_L, tc_inf, tc_inf_stderr = estimate_tc_finite_size(df)
 
     plot_m_vs_t(df, tc_inf, args.outdir)
     plot_chi_vs_t(df, tc_inf, args.outdir)
     plot_binder_vs_t(df, tc_inf, args.outdir)
     plot_c_vs_t(df, tc_inf, args.outdir)
-    plot_tc_extrapolation(df, metrics_df, tc_inf, args.outdir)
-    plot_beta_loglog(df, metrics_df, EXACT_TC, args.outdir)
-    plot_data_collapse(df, metrics_df, tc_inf, args.outdir)
-    plot_beta_bootstrap_hist(args.beta_csv, metrics_df, args.outdir)
+    plot_tc_extrapolation(tc_by_L, tc_inf, tc_inf_stderr, args.outdir)
+    plot_data_collapse(df, tc_inf, args.outdir)
 
     print(f"\n Saved plots to {args.outdir}/")
 if __name__ == "__main__":
