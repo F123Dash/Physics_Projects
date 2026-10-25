@@ -1,23 +1,27 @@
 .venv
 /.vscode
+.obsidian
 __pycache__
 
-# Ignore common executable outputs anywhere in the repo
+# Executables
 **/*.exe
 **/*.out
 **/*.bin
 **/*.app
 
-# Ignore extensionless binaries from C/C++ builds (e.g. 1D, 2D, 3D)
-**/results_outputs/*
+# Extensionless binaries from C/C++/CUDA builds
 **/1D
 **/2D
 **/3D
+/FDTD/cavity
+/FDTD/cpml_test
+/Ising/ising2d_*
 
-# Ignore generated data files and folders
+# Generated data
 **/data/
 **/data_*/
 **/data_outputs/
+**/results_outputs/*
 **/*.csv
 **/*.tsv
 **/*.dat
@@ -25,8 +29,12 @@ __pycache__
 **/*.npz
 **/*.h5
 **/*.hdf5
+/Turbulence-cnn/train-data
+/Turbulence-cnn/img_out
+/Turbulence-cnn/snapshots*
+!Turbulence-cnn/data
 
-# Ignore generated plot files and folders
+# Generated plots
 **/plot/
 **/plots/
 **/plot_outputs/
@@ -36,8 +44,37 @@ __pycache__
 **/*.svg
 **/*.pdf
 
+# LaTeX sources and build files (only the compiled reports are kept)
+**/*.tex
+**/*.aux
+**/*.log
+**/*.toc
 
-/Turbulence-cnn/runs
-/Turbulence-cnn/train-data
-/Turbulence-cnn/img_out
-!Turbulence-cnn/data
+# Keep the figures used by the READMEs and reports
+!/SSH-model/figures/*.png
+!/Berry-phase/figures/*.png
+!/nh-SSH/figures/*.png
+!/non-Bloch/figures/*.png
+!/Fourier-optics/figures/*.png
+!/iSCAT/figures/*.png
+!/Supercontinuum/figures/*.png
+!/FDTD/results_outputs/*.png
+
+# Ising: top-level plots only (not old/ or scan_wolff/)
+!/Ising/plots/
+/Ising/plots/*
+!/Ising/plots/*.png
+
+# Turbulence-CNN: final model (run 03) evaluation, its training curves and one run-04 spectrum
+/Turbulence-cnn/runs/*
+!/Turbulence-cnn/runs/eval_turbulence_03/
+!/Turbulence-cnn/runs/eval_turbulence_03/*.png
+!/Turbulence-cnn/runs/turbulence_03/
+/Turbulence-cnn/runs/turbulence_03/*
+!/Turbulence-cnn/runs/turbulence_03/training_curves.png
+!/Turbulence-cnn/runs/eval_turbulence_04_spec002/
+/Turbulence-cnn/runs/eval_turbulence_04_spec002/*
+!/Turbulence-cnn/runs/eval_turbulence_04_spec002/spectrum_forced_Re4000.png
+
+# Compiled project reports
+!/*/*.pdf
