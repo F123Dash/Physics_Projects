@@ -15,10 +15,30 @@ dependencies = [
     "torch (>=2.12.0,<3.0.0)",
     "torchvision (>=0.27.0,<0.28.0)",
     "scipy (>=1.17.1,<2.0.0)",
-    "scikit-learn (>=1.9.0,<2.0.0)"
+    "scikit-learn (>=1.9.0,<2.0.0)",
+    "mpmath (>=1.3.0,<2.0.0)"
 ]
 
+[tool.poetry]
+packages = [
+    {include = "ssh_model", from = "SSH-model"},
+    {include = "berry_phase", from = "Berry-phase"},
+    {include = "nh_ssh", from = "nh-SSH"},
+    {include = "non_bloch", from = "non-Bloch"},
+    {include = "fourier_optics", from = "Fourier-optics"},
+    {include = "iscat", from = "iSCAT"},
+    {include = "supercontinuum", from = "Supercontinuum"},
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["SSH-model", "Berry-phase", "nh-SSH", "non-Bloch", "Fourier-optics", "iSCAT", "Supercontinuum"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0)",
+    "miepython (>=3.3.0,<4.0.0)"
+]
