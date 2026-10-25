@@ -1,11 +1,39 @@
 # Fourier Optics and Structured Light
-### Band-limited angular-spectrum propagation, Gaussian and Laguerre–Gauss beams, the Talbot carpet, and where the method fails
 
-A monochromatic field in a plane is a sum of plane waves, and free propagation only multiplies each one by $e^{ik_z z}$. This project builds that propagator (with the band limit of Matsushima and Shimobaba, optional zero padding and a paraxial switch). It tests the propagator against plane waves, Parseval and an exact Hankel integral, then uses it on four problems: the Gaussian beam's width, curvature and Gouy phase; Laguerre–Gauss vortex modes with their winding, OAM and mode-order-dependent Gouy phase; the Talbot self-images of gratings; and the sampling limits of the method. Where the numerics differ from the paraxial formulas, the difference is derived and checked, with no fitted parameters: the nonparaxial width, Gouy and LG overlap terms, and the $\sqrt{\lambda/d}$ defect of a binary grating's Talbot image.
+*Band-limited angular-spectrum propagation, Gaussian and Laguerre–Gauss beams, the Talbot carpet, and where the method fails.*
 
-Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (136 tests in `tests/`). Derivations and the full report are in [`Fourier-optics.pdf`](Fourier-optics.pdf).
+<p align="center">
+  <img src="figures/fig3_lg_modes.png" width="760" alt="Intensity rings and spiral phase of four Laguerre–Gauss modes propagated to z = zR, with winding numbers +1, +3, +1 and -2">
+</p>
 
----
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="Fourier-optics.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
+
+A monochromatic field in a plane is a sum of plane waves, and free propagation only multiplies each one by $e^{ik_z z}$. This project builds that propagator (with the band limit of Matsushima and Shimobaba, optional zero padding and a paraxial switch). It tests the propagator against plane waves, Parseval and an exact Hankel integral. It then applies it to four problems:
+
+- the Gaussian beam's width, curvature and Gouy phase;
+- Laguerre–Gauss vortex modes with their winding, OAM and mode-order-dependent Gouy phase;
+- the Talbot self-images of gratings;
+- the sampling limits of the method.
+
+Where the numerics differ from the paraxial formulas, the difference is derived and checked with no fitted parameters. That covers the nonparaxial width, Gouy and LG overlap terms, and the $\sqrt{\lambda/d}$ defect of a binary grating's Talbot image.
+
+> [!NOTE]
+> Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (136 tests in `tests/`). Derivations and the full report are in [`Fourier-optics.pdf`](Fourier-optics.pdf).
+
+## Quick start
+
+```bash
+poetry install                                           # from the repository root
+poetry run pytest Fourier-optics/tests                   # ~12 s
+poetry run python Fourier-optics/scripts/make_figures.py # ~44 s
+```
+
+Runtimes measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). Two runs of the script give identical `results.txt` files.
 
 ## Summary of results
 
@@ -35,7 +63,9 @@ $\lambda = 0.5\ \mu$m, $w_0 = 10\ \mu$m ($z_R = 628.3\ \mu$m, $\varepsilon = 1/(
 | Slit at $z = 4$ mm, padded, no band limit / band-limited | $6.9\%$ / $0.05\%$ error | wrong / right | `test_band_limit_needed_beyond_critical_distance` |
 | Unlimited error first $> 1.5\times$ band-limited | $z = 526\ \mu$m unpadded, $1243\ \mu$m padded (scan) | after $z_c = 443$, $887\ \mu$m | `test_critical_distance` |
 
-**Corrections to the brief** (details in the sections below):
+### Corrections to the brief
+
+Details are in the sections below.
 
 1. **Gouy sign.** With $e^{i(kz-\omega t)}$, the on-axis phase minus $kz$ is $-\arctan(z/z_R)$, a lag, not $+\arctan$ (§3.1).
 2. **The "exact" Talbot distance belongs to the first harmonic only.** $\lambda/(1-\sqrt{1-\lambda^2/d^2})$ is where orders $0$ and $\pm1$ rephase. Order $m$ rephases at a different distance, so only a grating with harmonics $0, \pm1$ (a cosine grating) self-images exactly. A 50% binary grating with $d = 10\ \mu$m has field fidelity $0.866$ at $z_T$, and its best revival nearby is at $394.08\ \mu$m with $F = 0.951$. With the paraxial transfer function it self-images perfectly at $2d^2/\lambda$ (§3.5).
@@ -43,8 +73,6 @@ $\lambda = 0.5\ \mu$m, $w_0 = 10\ \mu$m ($z_R = 628.3\ \mu$m, $\varepsilon = 1/(
 4. **The paraxial $z_T$ is always too long by $\lambda/2$**, independent of $d$: $z_T = 2d^2/\lambda - \lambda/2 + O(\lambda^3/d^2)$. The brief's $399.75$ vs $400\ \mu$m is right.
 5. **Band limiting must be switched off for a periodic window.** Its argument is about light leaving a finite window. With one grating period as the window, $f_\text{lim}(z_T) = 0.025\ \mu\text{m}^{-1} < 1/d$ would delete every diffraction order.
 6. The measured deviations from the paraxial formulas ($10^{-4}$ in width, $3\times10^{-5}$ rad in Gouy, $3\times10^{-3}$ rad for $\mathrm{LG}_2^{-2}$) are not numerical error. They are nonparaxial physics with closed forms, and the numerics match those to $10^{-11}$, $10^{-8}$ and $2.5\times10^{-6}$ rad.
-
----
 
 ## 1. Model and conventions
 
@@ -65,8 +93,6 @@ and evanescent components decay as $e^{-\kappa|z|}$. It works on 1D arrays (fiel
 | `oam_per_photon` | $\langle -i(x\partial_y - y\partial_x)\rangle$ with spectral derivatives |
 | `fidelity(a, b)` | $\|\langle a\|b\rangle\|^2/(\langle a\|a\rangle\langle b\|b\rangle)$ |
 
----
-
 ## 2. Method
 
 ### 2.1 Propagator
@@ -75,7 +101,14 @@ There is no `fftshift` anywhere in the propagation. The transfer function depend
 
 The band limit $f_\text{lim} = 1/(\lambda\sqrt{(2z/L)^2+1})$ is Nyquist sampling of the transfer function's phase in frequency space ([derivation §2](Fourier-optics.pdf)). In real space it says that a plane wave moving sideways by more than $L/2$ over the distance $z$ would wrap around the window. The limit removes nothing until $z_c = \frac L2\sqrt{(2\Delta x/\lambda)^2 - 1}$ (`test_critical_distance`). `pad=True` doubles the window with zeros, propagates and crops, as in the original paper.
 
-Checks of the propagator itself: power conservation for fields inside the passband (≤ $10^{-15}$ at $z$ up to $10^5\ \mu$m, with and without the band limit); a field with evanescent content keeps exactly its propagating power; plane waves up to $70°$ only pick up $e^{ik_zz}$ (including $n = 1.5$); forward then backward is the identity; $H(z_1)H(z_2) = H(z_1+z_2)$; 1D equals a $y$-invariant 2D field; and the Fresnel transfer function differs from the exact one by at most three times the quartic-term estimate.
+Checks of the propagator itself:
+
+- Power is conserved for fields inside the passband (≤ $10^{-15}$ at $z$ up to $10^5\ \mu$m, with and without the band limit).
+- A field with evanescent content keeps exactly its propagating power.
+- Plane waves up to $70°$ only pick up $e^{ik_zz}$ (including $n = 1.5$).
+- Forward then backward is the identity, and $H(z_1)H(z_2) = H(z_1+z_2)$.
+- 1D equals a $y$-invariant 2D field.
+- The Fresnel transfer function differs from the exact one by at most three times the quartic-term estimate.
 
 ### 2.2 Observables
 
@@ -89,13 +122,11 @@ Checks of the propagator itself: power conservation for fields inside the passba
 
 One period of the grating is the whole window ($M = 512$ samples), so the DFT holds the exact Fourier series of an infinite grating and the band limit is off. Self-imaging is measured by the field fidelity $F(z)$ with the input. The peak is located from 11 samples spaced $0.002z_T$ apart and centred on the *paraxial* guess $2d^2/\lambda$; the vertex of a parabola through the top three gives $z_\text{peak}$. The half-Talbot shift is measured from the phase of the intensity's first Fourier harmonic. For the defect scan, a 50% binary grating is built from its propagating Fourier orders only. Its fidelity is then a closed-form phase sum over orders (`talbot_fidelity_series`), and the FFT propagator matches that sum to $4\times10^{-13}$.
 
----
-
 ## 3. Results
 
 ### 3.1 Gaussian beam
 
-![Gaussian beam](figures/fig1_gaussian.png)
+![Gaussian beam width, curvature and Gouy phase against z, with the paraxial formulas](figures/fig1_gaussian.png)
 
 **Figure 1.** (a) Second-moment width (circles) and fitted curvature $z_R/R$ (squares) of a $w_0 = 10\ \mu$m Gaussian propagated from the waist in both directions, against $w_0\sqrt{1+\zeta^2}$ and $z/(z^2+z_R^2)$ (lines). (b) Gouy phase: on axis for the Gaussian (filled), from overlaps for four LG modes (open), against $(2p+|l|+1)\arctan\zeta$ (lines).
 
@@ -110,7 +141,7 @@ From $-3z_R$ to $+3z_R$ the Gaussian's on-axis phase slips by $0.795148\pi$ agai
 
 ### 3.2 What the paraxial formulas miss
 
-![Nonparaxial terms](figures/fig2_nonparaxial.png)
+![Width and Gouy-phase deviations from the paraxial values against the derived nonparaxial terms](figures/fig2_nonparaxial.png)
 
 **Figure 2.** (a) Numerical width and on-axis Gouy phase minus their paraxial values, in units of $\varepsilon = 1/(kw_0)^2$ (symbols), against the derived first-order terms (lines, no fitted parameter). (b) Phase of the overlap with the analytic LG mode beyond the Gouy lag, against $-\zeta\langle s^2\rangle/4$.
 
@@ -129,7 +160,7 @@ The residual phase is the next term, $-\zeta\varepsilon^2\langle s^3\rangle/4$. 
 
 ### 3.3 Laguerre–Gauss modes
 
-![LG modes](figures/fig3_lg_modes.png)
+![Intensity and phase of four Laguerre–Gauss modes at z = zR](figures/fig3_lg_modes.png)
 
 **Figure 3.** Four LG modes propagated numerically from the waist to $z = z_R$. (a) Intensity. (b) Phase with the carrier $kz$ removed, masked where $I < 10^{-3}I_\text{max}$; the square is the loop used for the winding number $W$.
 
@@ -144,7 +175,7 @@ Each winding number is the sum of wrapped phase steps around the loop and is an 
 
 ### 3.4 Gouy phase made visible
 
-![Rotation](figures/fig4_rotation.png)
+![Two-lobed LG superposition rotating by the Gouy phase between z = 0 and 3zR](figures/fig4_rotation.png)
 
 **Figure 4.** (a) Intensity of $(\mathrm{LG}_0^0 + \mathrm{LG}_0^2)/\sqrt2$ at $z = 0, z_R, 3z_R$, each scaled to its own $w(z)$; dashed lines at angle $\arctan(z/z_R)$. (b) Orientation of the lobes against $\arctan(z/z_R)$.
 
@@ -152,7 +183,7 @@ The two modes have Gouy orders 1 and 3, so their relative phase is $2\psi$ and t
 
 ### 3.5 Talbot carpet
 
-![Talbot](figures/fig5_talbot.png)
+![Talbot carpet behind a binary grating, and self-image fidelity near the Talbot distance](figures/fig5_talbot.png)
 
 **Figure 5.** (a) Intensity behind a 50% binary amplitude grating ($d = 10\ \mu$m $= 20\lambda$) from $z = 0$ to $z_T$, exact transfer function, two periods shown. (b) Field fidelity with the input near $z_T$: cosine grating, binary grating, and binary grating with the paraxial transfer function. Solid line: exact $z_T$; dotted: $2d^2/\lambda$.
 
@@ -167,7 +198,7 @@ Panel (b) is the main surprise. The binary grating does not reproduce itself at 
 
 ### 3.6 How fast a binary grating approaches perfect self-imaging
 
-![Talbot defect](figures/fig6_talbot_defect.png)
+![Binary-grating Talbot defect against d/lambda with its square-root asymptote](figures/fig6_talbot_defect.png)
 
 **Figure 6.** $1 - F(z_T)$ for a 50% binary grating (propagating orders only) against $d/\lambda$: FFT propagator (circles), closed-form phase sum over orders (line), and the derived asymptote (grey).
 
@@ -189,9 +220,9 @@ $$
 
 ### 3.7 Where the method fails: aliasing of the transfer function
 
-![Sampling](figures/fig7_sampling.png)
+![Propagation error of a slit against distance for plain, band-limited and padded propagators](figures/fig7_sampling.png)
 
-**Figure 7.** (a) Relative error on $|x| < L/4$ of a $20\ \mu$m slit propagated on $N = 1024$, $\Delta x = \lambda$ ($L = 512\ \mu$m), against the same slit in a 64 times wider window (alias-free to 28 mm). Dotted lines: $z_c$ for $L$ and $2L$. (b) Intensity at $z = 4$ mm.
+**Figure 7.** (a) Relative error on $|x| < L/4$ of a $20\ \mu$m slit propagated on $N = 1024$, $\Delta x = \lambda$ ($L = 512\ \mu$m). The reference is the same slit in a 64 times wider window (alias-free to 28 mm). Dotted lines: $z_c$ for $L$ and $2L$. (b) Intensity at $z = 4$ mm.
 
 | $z$ ($\mu$m) | plain | band-limited | padded | padded + band-limited |
 |---|---|---|---|---|
@@ -199,11 +230,11 @@ $$
 | 4000 | $1.3\times10^{-1}$ | $1.5\times10^{-2}$ | $6.9\times10^{-2}$ | $5.0\times10^{-4}$ |
 | 8000 | $1.9\times10^{-1}$ | $2.1\times10^{-2}$ | $1.0\times10^{-1}$ | $7.0\times10^{-3}$ |
 
-Below $z_c$ the band limit removes nothing and all four variants agree pairwise. The small error that remains comes from the sinc tails of the slit's sharp edges wrapping around the window, which padding cuts by 4. Past $z_c(2L) = 887\ \mu$m the unlimited transfer function is undersampled, and its error passes 1.5 times the band-limited one by the next scanned points ($526\ \mu$m unpadded, $1243\ \mu$m padded); at first only the weak edge of the spectrum aliases. The steep plane waves that should leave the window come back as the noise in (b), and the error jumps to 5–10%. The band-limited, padded propagator stays at $\le 7\times10^{-3}$ out to 8 mm.
+Below $z_c$ the band limit removes nothing and all four variants agree pairwise. The small error that remains comes from the sinc tails of the slit's sharp edges wrapping around the window, which padding cuts by 4. Past $z_c$ the unlimited transfer function is undersampled ($z_c = 443\ \mu$m for the window $L$, $887\ \mu$m for the padded $2L$). Its error passes 1.5 times the band-limited one at the next scanned points: $526\ \mu$m unpadded, $1243\ \mu$m padded. At first only the weak edge of the spectrum aliases. The steep plane waves that should leave the window come back as the noise in (b), and the error jumps to 5–10%. The band-limited, padded propagator stays at $\le 7\times10^{-3}$ out to 8 mm.
 
 ### 3.8 Where the method fails: window and grid
 
-![Grid](figures/fig8_grid.png)
+![Gaussian width error against window size, and field error against grid spacing](figures/fig8_grid.png)
 
 **Figure 8.** (a) Error in the width of the $w_0 = 10\ \mu$m Gaussian at $3z_R$ ($w = 31.6\ \mu$m) against the half-window in units of $w$, $\Delta x = 0.5\ \mu$m. (b) Field error at $z_R$ (paraxial TF, so only sampling errors count) against $\Delta x/w_0$ on a $512\ \mu$m window, with the square root of the beam's power beyond the grid Nyquist frequency.
 
@@ -217,8 +248,6 @@ Below $z_c$ the band limit removes nothing and all four variants agree pairwise.
 
 Rule of thumb: the window must hold $\pm3w$ at the largest $z$ for $10^{-8}$, and $\Delta x \le 0.3w_0$ for round-off-level results. Padding does not help a window that is too small: it stops wrap-around, but the cropped light is still lost. The coarse-grid error follows $\sqrt{P(|f_i| > 1/2\Delta x)}$ to within 6%. This is an estimate rather than a derivation: the folded spectrum is propagated with the wrong $k_z$.
 
----
-
 ## 4. Discussion
 
 1. *Why does a Gaussian beam get a phase shift of $\pi$ passing through its focus?* A focused beam is a spread of plane waves whose $k_z$ is smaller than $k$ by $k_\rho^2/2k$, so along the axis it falls behind a plane wave. The beam is confined to $w$, so it has $k_\rho \sim 1/w$, and the extra phase per length scales as $1/kw^2$. Integrating that over $z$, with $w$ smallest at the focus, gives $\int dz\,z_R/(z^2+z_R^2) = \pi$. Mode order $N = 2p+|l|+1$ multiplies the spread in $k_\rho^2$ and hence the phase (fig. 1b), which is what makes the superposition in fig. 4 rotate. Exactly, the total is still $\pi$ but the profile is shifted by $O(\varepsilon)$ (fig. 2a).
@@ -228,15 +257,16 @@ Rule of thumb: the window must hold $\pm3w$ at the largest $z$ for $10^{-8}$, an
 
 ## 5. What I would ask
 
-- **Vector fields.** For $w_0 \sim \lambda$ the scalar theory is not enough. How large are the polarisation-dependent corrections (longitudinal field, spin-orbit coupling) compared with the scalar $\varepsilon$ terms derived here? This is the starting point for the high-NA focusing of Project 6.
+- **Vector fields.** For $w_0 \sim \lambda$ the scalar theory is not enough. How large are the polarisation-dependent corrections (longitudinal field, spin-orbit coupling) compared with the scalar $\varepsilon$ terms derived here? This is the starting point for the high-NA focusing of the [iSCAT](../iSCAT/README.md) project.
 - **Fractional Talbot images.** The carpet shows images of half the period near $z_T/4$. Paraxially, at $z_T\,p/q$ the field is a superposition of $q$ shifted copies (Berry and Klein). How quickly do these fractional images degrade nonparaxially compared with the full image, given that they involve the same $m^4$ phase errors?
 - **Mode conversion.** The cylindrical-lens converter of Beijersbergen et al. turns $\mathrm{HG}_{mn}$ into $\mathrm{LG}$ modes using the Gouy phase difference between the two axes of an astigmatic beam. This propagator plus thin-lens phases can model it, and the output purity is a single number to test.
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 Fourier-optics/
 ├── fourier_optics/
 │   ├── propagate.py  grid, transfer function (exact / paraxial), band limit, critical distance, propagate, power
@@ -252,15 +282,7 @@ Fourier-optics/
 └── Fourier-optics.pdf the project report
 ```
 
-## Running
-
-```bash
-poetry install                                           # from the repository root
-poetry run pytest Fourier-optics/tests                   # ~12 s
-poetry run python Fourier-optics/scripts/make_figures.py # ~44 s
-```
-
-Runtimes measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). Two runs of the script give identical `results.txt` files.
+</details>
 
 ## References
 

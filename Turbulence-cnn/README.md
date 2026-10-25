@@ -1,5 +1,14 @@
 # Turbulence-CNN
-### Physics-Informed Super-Resolution of 2-D Turbulence
+
+*Physics-informed super-resolution of 2-D turbulence.*
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#results">Results</a> •
+  <a href="Turbulence_CNN.pdf">Report (PDF)</a> •
+  <a href="#pipeline">Pipeline</a> •
+  <a href="#model-architecture">Model architecture</a>
+</p>
 
 A U-Net that reconstructs 128×128 velocity, pressure and vorticity fields of two-dimensional turbulence from 4× block-averaged (32×32) inputs, and is tested on Reynolds numbers it never saw. The training data is direct numerical simulation (DNS) of incompressible Navier-Stokes turbulence in a periodic box, in two regimes:
 
@@ -8,13 +17,23 @@ A U-Net that reconstructs 128×128 velocity, pressure and vorticity fields of tw
 
 An auxiliary head regresses log Re from the bottleneck features.
 
-The same pipeline also handles a second, laminar flow, the **lid-driven cavity** (Re = 100–3200, 64×64 from 16×16). It is kept as a wall-bounded test case. Each dataset's `meta.json` records its domain (periodic or walls), and every stage adapts to it.
+The same pipeline also handles a second, laminar flow, the **lid-driven cavity** (Re = 100–3200, 64×64 from 16×16). It is kept as a wall-bounded test case. Each dataset's `meta.json` records its domain (periodic or walls), and every stage adapts to it. The full report is [`Turbulence_CNN.pdf`](Turbulence_CNN.pdf).
 
----
+## Quick start
+
+The project runs in the repository's Poetry environment; the root `pyproject.toml` lists its dependencies.
+
+```bash
+poetry install                       # from the repository root
+cd Turbulence-cnn
+poetry run python -m pytest tests    # ~5 s, no data needed
+```
+
+CUDA is used automatically if available; for a CUDA build of PyTorch, follow the [PyTorch install selector](https://pytorch.org/get-started/locally/). Shared settings live in `config.py`; `--flow turbulence` (the default) or `--flow cavity` picks a dataset preset in `train.py`, `evaluate.py` and `data/dataset.py`.
 
 ## Results
 
-All numbers are relative L2 errors in physical units on the **test set**: 560 snapshots at Re 320, 800 and 2000 (interpolation) and Re 4000 (extrapolation), from runs with their own seeds that were never seen in training. The tables compare the CNN with three baselines, all built from the same 32² block averages the model sees:
+All numbers are relative L2 errors in physical units on the **test set**. It holds 560 snapshots at Re 320, 800 and 2000 (interpolation) and Re 4000 (extrapolation), from runs with their own seeds that were never seen in training. The tables compare the CNN with three baselines, all built from the same 32² block averages the model sees:
 
 - **bilinear:** the model's own input
 - **bicubic**
@@ -52,11 +71,11 @@ Pointwise losses replace the part of the fine scales that the coarse input canno
 | 0.002 (run 04b) | 1.0% / 1.5% | 9.4% / 11.0% | **1.0% / 1.6%** | 0.076 / 0.087 | 95.3 / 93.2; 94.6 / 91.9 % |
 | 0.01 (run 04a) | 1.1% / 1.6% | 9.7% / 11.3% | 1.2% / 1.8% | **0.066 / 0.061** | **95.5 / 95.3; 95.6 / 94.3 %** |
 
-Before the spectral runs, three conditions were set for replacing run 03: HF energy ≥ 95% at Re 2000 and 4000, lower spectral error, and velocity error up by at most 0.2 points with ω no worse. Neither spectral run met all three. Both raised ω error by about one point, and both fall short of 95% HF energy for decaying flow at Re 4000 (λ = 0.002 also at decaying Re 2000 and forced Re 4000). So **run 03 remains the default**.
+Before the spectral runs, three conditions were set for replacing run 03. HF energy had to reach ≥ 95% at Re 2000 and 4000, the spectral error had to fall, and the velocity error could rise by at most 0.2 points with ω no worse. Neither spectral run met all three. Both raised ω error by about one point, and both fall short of 95% HF energy for decaying flow at Re 4000 (λ = 0.002 also at decaying Re 2000 and forced Re 4000). So **run 03 remains the default**.
 
 **Recommendation:**
 - **Pointwise accuracy** (the reconstructed field itself): use `turbulence_03`.
-- **Realistic fine-scale statistics** (spectra, small-scale energy): use λ_spec = 0.002 (`turbulence_04_spec002`). It keeps most of the spectral gain of λ = 0.01 (spec err 0.08 vs 0.07, 3× below run 03) at a lower pointwise cost (velocity +0.1–0.2 points instead of +0.2–0.3; ω +0.9–1.0 instead of +1.2–1.3).
+- **Realistic fine-scale statistics** (spectra, small-scale energy): use λ_spec = 0.002 (`turbulence_04_spec002`). It keeps most of the spectral gain of λ = 0.01 (spec err 0.08 vs 0.07, 3× below run 03). Its pointwise cost is lower: velocity +0.1–0.2 points instead of +0.2–0.3, and ω +0.9–1.0 instead of +1.2–1.3.
 - **λ_spec = 0.01** adds little: λ = 0.002 is better on every pointwise metric (velocity, pressure, ω) and only slightly worse spectrally.
 
 Getting both realistic fine scales and the lowest pointwise error would need a generative model that samples the fine scales (for example diffusion-based super-resolution) instead of predicting one field.
@@ -95,15 +114,15 @@ Relative L2 error on unseen Re (150 epochs; best checkpoint at epoch 147):
 | CNN, run 01 | 1.7% | 3.4% | 2.0% | 13.7% | 12.4% | 16.8% | 92% / 98% |
 | bicubic | 4.4% | 6.1% | 2.5% | 5.0% | 24.1% | 27.0% | 46% / 75% |
 
-Every number improved. Decaying pressure, previously worse than bicubic, is now 3× better than it, and the predicted velocity is exactly divergence-free. Per Re, the error grows smoothly with Re: forced velocity error is 0.4% at Re 320, 1.1% at 2000 and 1.5% at Re 4000 (extrapolated). The remaining weakness is the finest scales at high Re. For forced Re 4000 the predicted spectrum follows the DNS up to k ≈ 25, then falls about 10× below it by k = 63 (HF energy 90%, ω error 16%), which is typical L2 smoothing. Validation error was still falling at epoch 150, so the next run trains longer.
+Every number improved. Decaying pressure, previously worse than bicubic, is now 3× better than it, and the predicted velocity is exactly divergence-free. Per Re, the error grows smoothly with Re: forced velocity error is 0.4% at Re 320, 1.1% at 2000 and 1.5% at Re 4000 (extrapolated). The remaining weakness is the finest scales at high Re. For forced Re 4000 the predicted spectrum follows the DNS up to k ≈ 25, then falls about 10× below it by k = 63 (HF energy 90%, ω error 16%). This is typical L2 smoothing. Validation error was still falling at epoch 150, so the next run trains longer.
 
 #### Run 03 (`turbulence_03`): 300 epochs
 
-Validation error flattens out around epoch 200 (best checkpoint at epoch 287). Doubling the epochs gave small gains: velocity 0.9% forced and 1.3% decaying; pressure 1.1% and 1.6%; ω 8.4% and 10.1%. Fine-scale energy fell, though: HF energy dropped from 94–95% to 91–92% overall, and to 87–90% at Re ≥ 2000. At forced Re 2000 the predicted spectrum leaves the DNS from k ≈ 30 and is about 10× low at k = 63. This is what pointwise losses do: the unpredictable part of the fine scales is replaced by its conditional mean, which carries less energy, and longer training moves the model further toward that mean. Training longer is therefore exhausted. The next lever is `--lambda_spec`, a phase-blind spectral loss (see Loss Function). On run 03's training predictions the spectral mismatch is about 100× the reconstruction loss, so λ_spec = 0.01 weights the two about equally.
+Validation error flattens out around epoch 200 (best checkpoint at epoch 287). Doubling the epochs gave small gains: velocity 0.9% forced and 1.3% decaying; pressure 1.1% and 1.6%; ω 8.4% and 10.1%. Fine-scale energy fell, though: HF energy dropped from 94–95% to 91–92% overall, and to 87–90% at Re ≥ 2000. At forced Re 2000 the predicted spectrum leaves the DNS from k ≈ 30 and is about 10× low at k = 63. This is what pointwise losses do: the unpredictable part of the fine scales is replaced by its conditional mean, which carries less energy, and longer training moves the model further toward that mean. Training longer is therefore exhausted. The next lever is `--lambda_spec`, a phase-blind spectral loss (see [Loss function](#loss-function)). On run 03's training predictions the spectral mismatch is about 100× the reconstruction loss, so λ_spec = 0.01 weights the two about equally.
 
 #### Run 04a (`turbulence_04_spec01`): spectral loss, λ_spec = 0.01, 200 epochs
 
-Before the run, three conditions were set for replacing run 03: HF energy ≥ 95% at Re 2000 and 4000; lower spectral error; and velocity error up by at most 0.2 points with ω no worse. On unseen Re:
+Before the run, the three conditions listed under [Pointwise accuracy vs. fine-scale statistics](#pointwise-accuracy-vs-fine-scale-statistics) were set for replacing run 03. On unseen Re:
 
 | | u,v forced / decaying | ω forced / decaying | spec err forced / decaying | HF energy at Re 2000, 4000 (forced; decaying) |
 |---|---|---|---|---|
@@ -118,9 +137,7 @@ The spectral error ignores shells below 10⁻⁷ of a sample's total energy. Wit
 
 Best checkpoint at epoch 195. Spectral error falls 3× (0.076 forced, 0.087 decaying), and HF energy reaches 95% at forced Re 2000 but not at decaying Re 2000 (94.6%) or at Re 4000 (93.2% forced, 91.9% decaying). Velocity error rises 0.1–0.2 points (1.0% / 1.5%), within the limit set beforehand, but ω error rises about one point (9.4% / 11.0%). It therefore does not replace run 03, but it is a better compromise than λ = 0.01, which costs more pointwise accuracy for little extra spectral gain.
 
----
-
-## Physical Background
+## Physical background
 
 ### 2-D turbulence
 
@@ -137,7 +154,7 @@ with $Re = 1/\nu$ (velocities and lengths of order one).
 | Initial field | weak random vorticity, $k \le 8$ | random, $E(k) \propto k^4 e^{-2(k/8)^2}$, energy 0.5 |
 | Snapshots | after $t = 20$ (stationary), every 2 time units | from $t = 2$, every 0.5 time units |
 
-In 2-D, energy cascades to large scales and enstrophy to small scales (Kraichnan 1967). For wavenumbers above the forcing scale, the inviscid theory predicts $E(k) \propto k^{-3}$ (the enstrophy cascade), and the spectrum plots show this as a reference line. At the Re used here the spectrum is much steeper: between k = 16 (the coarse input's cut-off) and k = 63, the measured slope is about −5.5 for forced Re = 1000, identical at 256² and 512². Viscosity and drag steepen the cascade, so the scales the network reconstructs lie in its steep, near-dissipative tail rather than in a clean k⁻³ range. A clean range would need much higher Re and resolution.
+In 2-D, energy cascades to large scales and enstrophy to small scales (Kraichnan 1967). For wavenumbers above the forcing scale, the inviscid theory predicts $E(k) \propto k^{-3}$ (the enstrophy cascade), and the spectrum plots show this as a reference line. At the Re used here the spectrum is much steeper. Between k = 16 (the coarse input's cut-off) and k = 63, the measured slope is about −5.5 for forced Re = 1000, identical at 256² and 512². Viscosity and drag steepen the cascade, so the scales the network reconstructs lie in its steep, near-dissipative tail rather than in a clean k⁻³ range. A clean range would need much higher Re and resolution.
 
 ### Numerical method (turbulence)
 
@@ -155,62 +172,16 @@ Chorin projection on a collocated grid: MUSCL/van Leer advection, a DCT pressure
 
 Block averaging by 4 keeps 1/16 of the Fourier modes, so many fine fields map to the same coarse one. The CNN learns a prior over the fine fields and predicts a residual on top of the bilinearly upsampled input. For turbulence, the target is every scale between k = 16 and k = 63.
 
----
-
-## Directory Structure
-
-```
-Turbulence-cnn/
-├── config.py                 # Shared settings: paths, Re lists, grids, flow presets
-├── solver/
-│   ├── turbulence.py         # Pseudo-spectral 2-D turbulence (forced/decaying) + data generation
-│   ├── ns_solver.py          # Cavity solver, streamfunction/vortex diagnostics, Ghia benchmark
-│   ├── pressure_poisson.py   # Cavity DCT pressure solver
-│   └── generate_data.py      # Cavity data generation
-├── data/
-│   ├── dataset.py            # Loading (any layout), split by Re, normalisation, TurbulenceDataset
-│   └── augmentation.py       # Mirror flips and periodic shifts (physical units), coarsening
-├── models/
-│   ├── unet.py               # TurbulenceUNet (7.3M params), residual output, periodic option
-│   ├── losses.py             # TurbulenceLoss (recon + div + vort + Re), SSIM, derivatives
-│   └── classifier.py         # ReRegressor: log10 Re from the bottleneck
-├── train/
-│   ├── train.py              # Training loop, checkpoints, val/test tables
-│   ├── evaluate.py           # Unseen-Re evaluation, spectra / cavity physics, plots, t-SNE
-│   └── metrics.py            # Metrics shared by train.py and evaluate.py
-├── tests/                    # python -m pytest tests  (cavity and turbulence paths)
-├── notebooks/                # Written for an older cavity pipeline; not yet updated
-├── snapshots_turb/           # Turbulence training data: <kind>/Re_*/seed_*/snap_*.npy + meta.json
-├── snapshots_turb_ood/       # Turbulence unseen-Re test data, same layout
-├── snapshots/, snapshots_ood/  # Cavity data: Re_*/snap_*.npy + meta.json
-└── runs/                     # Checkpoints and plots per experiment
-```
-
----
-
-## Installation
-
-```bash
-cd Turbulence-cnn
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python -m pytest tests      # ~5 s, no data needed
-```
-
-`requirements.txt` pins the versions used (Python 3.14). CUDA is used automatically if available; for a CUDA build of PyTorch, follow https://pytorch.org/get-started/locally/. Shared settings live in `config.py`; `--flow turbulence` (the default) or `--flow cavity` picks a dataset preset in `train.py`, `evaluate.py` and `data/dataset.py`.
-
----
-
 ## Pipeline
 
-```
+```text
 solver/turbulence.py  →  train/train.py  →  train/evaluate.py        (turbulence, default)
 solver/generate_data.py  →  train/train.py --flow cavity  →  train/evaluate.py --flow cavity
 ```
 
-## Stage 0 — Generate snapshots
+### Stage 0: generate snapshots
 
-### Turbulence
+#### Turbulence
 
 ```bash
 # training set: 6 Re × 3 seeds × {forced, decaying}
@@ -236,7 +207,7 @@ OMP_NUM_THREADS=1 python solver/turbulence.py --re_values 320 800 2000 4000 --se
 
 **Cost:** one step takes about 10 ms at 256² and 48 ms at 512² (one core). Forced runs at 512² (Re > 2500, here only the Re 4000 test runs) take about an hour each; everything else takes minutes. At Re 1000, 256² and 512² DNS give the same time-averaged spectrum within ~10% at every saved wavenumber.
 
-### Cavity
+#### Cavity
 
 ```bash
 OMP_NUM_THREADS=1 python solver/generate_data.py --workers 12
@@ -246,9 +217,7 @@ python solver/ns_solver.py --validate_ghia [--N 129]
 
 Options: `--re_values`, `--N` (64), `--refine` (2), `--save_dir`, `--overwrite`, `--workers`, `--t_start_save`/`--save_dt`/`--min_rel_change` (1.0/0.5/0.02), `--no_plots`. A cavity snapshot is saved only once (u, v) has changed by ≥ 2% since the previous one, and the steady state is saved once.
 
----
-
-## Stage 1 — Data split
+### Stage 1: data split
 
 `make_dataloaders` splits by **whole Reynolds numbers**, so no run at a test Re is ever seen in training:
 
@@ -258,11 +227,9 @@ Options: `--re_values`, `--N` (64), `--refine` (2), `--save_dir`, `--overwrite`,
 | val | Re 630 (model selection only) | Re 600, 2000 |
 | test | `snapshots_turb_ood/`: Re 320, 800, 2000, 4000 | `snapshots_ood/`: Re 1800, 2200, 2800, 4000 |
 
-`--max_train_re X` trains only on Re ≤ X and moves every higher training-folder Re to the test set, which makes the test a harder extrapolation. Normalisation statistics come from the training split only and are stored in every checkpoint, along with the domain. Training samples are mirrored in x or y (in physical units, with the sign changes the NS equations require), and periodic samples are also shifted randomly. Cavity inputs get Gaussian noise (σ = 0.05, normalised units); turbulence inputs get none (see Results).
+`--max_train_re X` trains only on Re ≤ X and moves every higher training-folder Re to the test set, which makes the test a harder extrapolation. Normalisation statistics come from the training split only and are stored in every checkpoint, along with the domain. Training samples are mirrored in x or y (in physical units, with the sign changes the NS equations require), and periodic samples are also shifted randomly. Cavity inputs get Gaussian noise (σ = 0.05, normalised units); turbulence inputs get none (see [Results](#results)).
 
----
-
-## Stage 2 — Train
+### Stage 2: train
 
 ```bash
 python train/train.py                       # turbulence -> runs/turbulence_01
@@ -293,9 +260,7 @@ python train/train.py --flow cavity         # cavity     -> runs/cavity_01
 
 **Outputs:** `best_model.pt` (lowest validation relative L2, mean over u, v, p, ω), `last_model.pt`, `history.npy`, `training_curves.png`, `prediction_ep*.png`, `re_scatter_{val,test}.png`. At the end the script prints validation and test tables against the baselines.
 
----
-
-## Stage 3 — Evaluate on unseen Re
+### Stage 3: evaluate on unseen Re
 
 ```bash
 python train/evaluate.py                    # turbulence: runs/turbulence_01/best_model.pt -> runs/eval_turbulence
@@ -308,11 +273,9 @@ The script prints the CNN's metrics per (flow kind, Re), each marked interpolati
 - **Cavity:** a steady-state physics table (primary-vortex ψ_min and centre, centreline errors), `centerline_ood_Re*.png` and `vorticity_cavity_Re*.png`.
 - **Both:** `tsne_bottleneck.png`, the bottleneck features of training and test snapshots coloured by log Re.
 
----
+## Model architecture
 
-## Model Architecture
-
-```
+```text
 Input (4, H, W)  bilinear upsampling of the 4×4 block averages of [u, v, p, ω]
     │
     ├── enc1: DoubleConv(4→64)    + Dropout  → (64, H, W)
@@ -330,9 +293,7 @@ Output = input + Conv1×1(64→4)
 - **Residual output:** the last 1×1 conv starts at zero, so an untrained model returns its input.
 - **Periodic domains:** circular padding in every convolution, and wrap-around upsampling (in the input as well). The network is then exactly equivariant to shifts by multiples of 8 cells (tested). The predicted velocity is projected onto divergence-free fields, û ← û − k(k·û)/|k|², in physical units. This is an orthogonal projection, so it never increases the velocity error.
 
----
-
-## Loss Function
+## Loss function
 
 $$\mathcal{L} = \mathcal{L}_\text{recon} + \lambda_\text{div}\mathcal{L}_\text{div} + \lambda_\text{vort}\mathcal{L}_\text{vort} + \lambda_\text{Re}\mathcal{L}_\text{Re}$$
 
@@ -346,9 +307,7 @@ $$\mathcal{L} = \mathcal{L}_\text{recon} + \lambda_\text{div}\mathcal{L}_\text{d
 
 Derivatives are exact spectral derivatives for periodic data and central differences on interior nodes (Δx = 1/63) for the cavity. On turbulence ground truth both physics terms are about 0 (tested). On cavity ground truth they are about 0.007 and 0.01, because the cavity's ω comes from a finer solver grid and the collocated grid is not exactly divergence-free.
 
----
-
-## Known Limitations
+## Known limitations
 
 | Limitation | Cause |
 |---|---|
@@ -356,9 +315,39 @@ Derivatives are exact spectral derivatives for periodic data and central differe
 | 2-D only | 3-D turbulence (forward energy cascade, k⁻⁵ᐟ³) would need a 3-D solver and model |
 | Forced snapshots are 2 time units apart | Consecutive snapshots of one run are correlated; splits are by Re, so this does not leak into the test |
 | Cavity data under-resolved above Re ≈ 1000 | 127² solver grid; use `--refine 4` |
-| Notebooks are out of date | They use an older cavity data format and APIs |
 
----
+## Directory structure
+
+<details>
+<summary>Files and what they contain</summary>
+
+```text
+Turbulence-cnn/
+├── config.py                 # Shared settings: paths, Re lists, grids, flow presets
+├── solver/
+│   ├── turbulence.py         # Pseudo-spectral 2-D turbulence (forced/decaying) + data generation
+│   ├── ns_solver.py          # Cavity solver, streamfunction/vortex diagnostics, Ghia benchmark
+│   ├── pressure_poisson.py   # Cavity DCT pressure solver
+│   └── generate_data.py      # Cavity data generation
+├── data/
+│   ├── dataset.py            # Loading (any layout), split by Re, normalisation, TurbulenceDataset
+│   └── augmentation.py       # Mirror flips and periodic shifts (physical units), coarsening
+├── models/
+│   ├── unet.py               # TurbulenceUNet (7.3M params), residual output, periodic option
+│   ├── losses.py             # TurbulenceLoss (recon + div + vort + Re), SSIM, derivatives
+│   └── classifier.py         # ReRegressor: log10 Re from the bottleneck
+├── train/
+│   ├── train.py              # Training loop, checkpoints, val/test tables
+│   ├── evaluate.py           # Unseen-Re evaluation, spectra / cavity physics, plots, t-SNE
+│   └── metrics.py            # Metrics shared by train.py and evaluate.py
+├── tests/                    # python -m pytest tests  (cavity and turbulence paths)
+├── snapshots_turb/           # Turbulence training data: <kind>/Re_*/seed_*/snap_*.npy + meta.json
+├── snapshots_turb_ood/       # Turbulence unseen-Re test data, same layout
+├── snapshots/, snapshots_ood/  # Cavity data: Re_*/snap_*.npy + meta.json
+└── runs/                     # Checkpoints and plots per experiment
+```
+
+</details>
 
 ## References
 

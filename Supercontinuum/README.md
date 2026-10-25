@@ -1,15 +1,59 @@
 # Supercontinuum Generation in a Photonic Crystal Fibre
-### GNLSE with RK4IP and split step, the Dudley–Genty–Coen benchmark, and where the simple estimates fail
 
-A femtosecond pulse launched into the anomalous-dispersion region of a photonic crystal fibre compresses, breaks up into fundamental solitons, sheds dispersive waves and red-shifts by Raman scattering; together these spread its spectrum over an octave. This project solves the generalised nonlinear Schrödinger equation (GNLSE) that describes it, with dispersion to any order, Kerr, self-steepening and the delayed Raman response. Two integrators are implemented, each with a fixed or adaptive step: a symmetric split-step Fourier method and the interaction-picture Runge–Kutta method (RK4IP, Hult 2007). The solver is checked against the analytic limits of the NLS, reproduces the benchmark of Dudley, Genty and Coen (RMP 78, 1135, 2006), and is then used for five further studies: photon number as the true invariant, the validity of the Gordon formula, compression and fission scaling with soliton order, coherence against pulse duration, and the role of each higher-order term.
+*GNLSE with RK4IP and split step, the Dudley–Genty–Coen benchmark, and where the simple estimates fail.*
 
-Every number on this page is produced by `scripts/run_checks.py` and `scripts/run_extensions.py` and saved in [`results/`](results/) (`checks_table.md`, `checks.json`, `window_study.json`, `extensions.json`). Each row of the summary table names the test that checks it (16 tests in `tests/`). The full report with derivations is [`Supercontinuum.pdf`](Supercontinuum.pdf).
+<p align="center">
+  <img src="figures/fig3_benchmark_evolution.png" width="760" alt="Spectral and temporal evolution of the benchmark pulse over 15 cm: the spectrum explodes after soliton fission at 0.75 cm and a Raman soliton walks off to 3.3 ps">
+</p>
 
----
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="Supercontinuum.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
+
+A femtosecond pulse launched into the anomalous-dispersion region of a photonic crystal fibre compresses, breaks up into fundamental solitons, sheds dispersive waves and red-shifts by Raman scattering; together these spread its spectrum over an octave. This project solves the generalised nonlinear Schrödinger equation (GNLSE) that describes it, with dispersion to any order, Kerr, self-steepening and the delayed Raman response. Two integrators are implemented, each with a fixed or adaptive step: a symmetric split-step Fourier method and the interaction-picture Runge–Kutta method (RK4IP, Hult 2007). The solver is checked against the analytic limits of the NLS and reproduces the benchmark of Dudley, Genty and Coen (RMP 78, 1135, 2006). It is then used for five further studies:
+
+- Photon number as the true invariant.
+- The validity of the Gordon formula.
+- Compression and fission scaling with soliton order.
+- Coherence against pulse duration.
+- The role of each higher-order term.
+
+> [!NOTE]
+> Every number on this page is produced by `scripts/run_checks.py` and `scripts/run_extensions.py` and saved in [`results/`](results/) (`checks_table.md`, `checks.json`, `window_study.json`, `extensions.json`). Each row of the summary table names the test that checks it (16 tests in `tests/`). The full report with derivations is [`Supercontinuum.pdf`](Supercontinuum.pdf).
+
+## Quick start
+
+`supercontinuum` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
+
+```bash
+poetry install                                                    # from the repository root
+poetry run pytest -m "not slow" Supercontinuum/tests              # ~35 s
+poetry run pytest Supercontinuum/tests                            # + benchmark, photon number, convergence
+poetry run python Supercontinuum/scripts/run_checks.py --small    # reduced pipeline into results/small/, ~50 s
+poetry run python Supercontinuum/scripts/run_checks.py            # figures 1-5, ~3 min
+poetry run python Supercontinuum/scripts/run_extensions.py        # figures 6-9, ~13 min
+```
+
+The same targets are in the `Makefile` (`make test`, `make test-all`, `make smoke`, `make checks`, `make extensions`). Propagation results are cached in `results/*.pkl`; `--fresh` recomputes them, and `run_extensions.py --redo coherence` recomputes one study.
+
+<details>
+<summary>Runtimes and hardware</summary>
+
+All propagations run on the GPU in one process. Measured on an AMD Ryzen 7 7840HS with an RTX 3050 6 GB Laptop GPU (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, PyTorch 2.12.0 with CUDA 13):
+
+| | runs | wall time | CPU | peak host RAM | peak GPU memory |
+|---|---|---|---|---|---|
+| `run_checks.py` | 41 | 189 s | 1 core | 1.5 GB | 0.6 GB |
+| `run_extensions.py` | 96 | ~13 min (coherence 10 min) | 1 core | 1.3 GB | ~0.7 GB |
+
+</details>
 
 ## Summary of results
 
-Benchmark: 835 nm pump, $T_0 = 28.4$ fs (50 fs FWHM), $P_0 = 10$ kW, $\gamma = 0.11\ \mathrm{W^{-1}m^{-1}}$, $\beta_2\ldots\beta_{10}$ from the brief, 15 cm; $L_D = 6.82$ cm, $N = 8.66$, $L_D/N = 0.79$ cm.
+Benchmark: 835 nm pump, $T_0 = 28.4$ fs (50 fs FWHM), $P_0 = 10$ kW, $\gamma = 0.11\ \mathrm{W^{-1}m^{-1}}$, $\beta_2\ldots\beta_{10}$ from the brief, 15 cm. Derived scales: $L_D = 6.82$ cm, $N = 8.66$, $L_D/N = 0.79$ cm.
 
 | Quantity | Result | Expected | Test |
 |---|---|---|---|
@@ -25,7 +69,7 @@ Benchmark: 835 nm pump, $T_0 = 28.4$ fs (50 fs FWHM), $P_0 = 10$ kW, $\gamma = 0
 | Soliton self-frequency shift, $T_0 = 100$ fs | $-0.0987$ vs Gordon $-0.0922$ rad/ps/m (7%) | Gordon formula | `test_bar[check_raman_shift]` |
 | Dispersive wave ($\beta_3 = 0.5$, $N = 1$) | peak at $\Omega T_0 = 6.315$, phase matching $6.281$, FWHM $0.176$ | phase matching | `test_bar[check_dispersive_wave]` |
 | Benchmark fission point | $z = 0.75$ cm $= 0.95\,L_D/N$ | $\sim L_D/N$ | `test_benchmark` |
-| Benchmark spectrum at $-40$ dB | $491$–$1307$ nm | Dudley et al. (2006) | `test_benchmark` |
+| Benchmark spectrum at $-40$ dB | $491$–$1307$ nm | Dudley, Genty and Coen (2006) | `test_benchmark` |
 | Convergence order | RK4IP $h^{4.02}$, split step $h^{2.00}$ | $h^4$, $h^2$ | `test_convergence_order` |
 | Photon number, full GNLSE, 15 cm | drift $3.5\times10^{-7}$ while energy drops 8.9% | conserved | `test_photon_number` |
 | RK4IP vs split step at equal cost | $6\times$ fewer evaluations at error $10^{-6}$, $20\times$ at $10^{-8}$ | RK4IP better | `scripts/run_checks.py` |
@@ -34,7 +78,9 @@ Benchmark: 835 nm pump, $T_0 = 28.4$ fs (50 fs FWHM), $P_0 = 10$ kW, $\gamma = 0
 | Coherence $\langle\|g_{12}\|\rangle$, 50 / 100 / 200 fs | $0.97$ / $0.17$ / $0.07$ | coherent for $N \lesssim 10$ | `scripts/run_extensions.py` |
 | Batched GPU solver vs serial solver | $\le 10^{-11}$ (typically $10^{-15}$), identical step counts | identical | `test_batch_matches_serial_solver` |
 
-**Corrections to the brief** (details in the sections below):
+### Corrections to the brief
+
+Details are in the sections below.
 
 1. **$T_R = 1.462$ fs**, not 1.5 fs: $f_R\cdot2\tau_1^2\tau_2/(\tau_1^2+\tau_2^2)$ with the brief's constants, confirmed by quadrature.
 2. **The Gordon formula is not within 20% for benchmark-scale solitons.** At $T_0 = 50$ fs the simulated shift is 28% faster, and at the 28 fs of the benchmark about 40%. Agreement to 20% needs $T_0 \gtrsim 60$ fs, so the check uses $T_0 = 100$ fs (§3.3, §3.7).
@@ -42,8 +88,6 @@ Benchmark: 835 nm pump, $T_0 = 28.4$ fs (50 fs FWHM), $P_0 = 10$ kW, $\gamma = 0
 4. **The phase-matching condition needs the soliton's recoil.** With the input values $\Omega_s = 0$, $P_s = P_0$ it predicts $6.158$, outside the radiation peak; with the soliton's actual centre frequency and peak power it predicts $6.281$ against the measured $6.315$ (§3.3).
 5. **"$N-1$ fundamental solitons" is not what is counted.** A physical classifier (anomalous dispersion, local soliton number 0.6–1.6, resolved) finds 5 solitons in the benchmark output; a plain threshold count gives 3 to 12 depending on the threshold (§3.4).
 6. **"Compare at equal runtime"** is done at equal numbers of nonlinear-operator evaluations, which is machine independent; both methods cost 4 per step (§3.5).
-
----
 
 ## 1. Model and conventions
 
@@ -78,8 +122,6 @@ The sign of the Raman shift depends on this convention (a pitfall named in the b
 | `analysis.classify_solitons` | fundamental solitons in an output field |
 | `analysis.coherence` | $\|g_{12}(\lambda)\|$ of an ensemble |
 
----
-
 ## 2. Method
 
 ### 2.1 Integrators
@@ -95,25 +137,23 @@ The sign of the Raman shift depends on this convention (a pitfall named in the b
 
 ### 2.3 Batched GPU integration
 
-`supercontinuum/batch.py` advances many independent propagations as one array of shape (runs, $n$). Each row has its own grid, fibre, pulse, length, tolerance and save points, and only $n$ is shared. Every row keeps its own adaptive step, so an easy run is not held back by a hard one, and finished rows leave the batch. Each check is written as a plan (its runs plus a function that turns their results into the check), and each script passes all its plans to a single `execute(...)` call, which groups the runs by $n$ and integrator.
+`supercontinuum/batch.py` advances many independent propagations as one array of shape (runs, $n$). Each row has its own grid, fibre, pulse, length, tolerance and save points, and only $n$ is shared. Every row keeps its own adaptive step, so an easy run is not held back by a hard one, and finished rows leave the batch. Each check is written as a plan: its runs plus a function that turns their results into the check. Each script passes all its plans to a single `execute(...)` call, which groups the runs by $n$ and integrator.
 
-In double precision the batch reproduces the serial solver to $\sim10^{-15}$ with identical step counts. Single precision is several times faster but its $\sim10^{-7}$ rounding is above the tolerances used here. On an RTX 3050 Laptop GPU a double-precision FFT with $n \le 8192$ costs about the same for 1 field as for 16, so a single run is no faster than on one CPU core; the gain is from batching (16 noise seeds at $n = 2^{14}$ run about 6× faster than serially on the CPU). Overrides: `SC_DEVICE` (e.g. `cpu`), `SC_MAX_ROWS` (rows per chunk), `SC_THREADS` (CPU backend). Without CUDA the batch runs on the CPU, and without PyTorch the serial solver is used.
+In double precision the batch reproduces the serial solver to $\sim10^{-15}$ with identical step counts. Single precision is several times faster but its $\sim10^{-7}$ rounding is above the tolerances used here. On an RTX 3050 Laptop GPU a double-precision FFT with $n \le 8192$ costs about the same for 1 field as for 16. A single run is therefore no faster than on one CPU core. The gain is from batching: 16 noise seeds at $n = 2^{14}$ run about 6× faster than serially on the CPU. Overrides: `SC_DEVICE` (e.g. `cpu`), `SC_MAX_ROWS` (rows per chunk), `SC_THREADS` (CPU backend). Without CUDA the batch runs on the CPU, and without PyTorch the serial solver is used.
 
 ### 2.4 Diagnostics
 
 - **Fission point:** the $z$ of maximum peak power.
-- **Soliton identification:** a temporal peak counts as a fundamental soliton if its gated spectrum lies in the anomalous region, its local soliton number $\sqrt{\gamma P T_0^2/|\beta_2(\Omega_c)|}$ is in $0.6$–$1.6$, $T_0 \ge 4\,dt$, and it is not a shoulder within $4T_0$ of a stronger soliton.
+- **Soliton identification:** a temporal peak counts as a fundamental soliton if four conditions hold. Its gated spectrum lies in the anomalous region, and its local soliton number $\sqrt{\gamma P T_0^2/|\beta_2(\Omega_c)|}$ is in $0.6$–$1.6$. It is resolved, $T_0 \ge 4\,dt$, and it is not a shoulder within $4T_0$ of a stronger soliton.
 - **Phase matching:** $\beta(\Omega) - \beta(\Omega_s) - \beta_1(\Omega_s)(\Omega-\Omega_s) = \gamma P_s/2$, solved numerically from the full Taylor series.
 - **Coherence:** $|g_{12}(\lambda)| = |\langle E_i^*E_j\rangle_{i\ne j}|/\langle|E|^2\rangle$ over an ensemble with one photon per mode of random phase added to the input, averaged over the $-40$ dB bandwidth weighted by the mean spectrum.
 - **Window checks:** the fraction of energy within 5% of either end of the time and frequency windows is recorded for every run.
-
----
 
 ## 3. Results
 
 ### 3.1 Analytic limits
 
-![Analytic limits](figures/fig1_limits.png)
+![Analytic limits: dispersive broadening, SPM spectra, soliton shape error and higher-order soliton recurrence](figures/fig1_limits.png)
 
 **Figure 1.** (a) RMS width of a chirp-free Gaussian under dispersion alone against $T_0\sqrt{1+(z/L_D)^2}$. (b) SPM spectra (Kerr only) at $\phi_{max} = 1.5\ldots4.5\pi$. (c) Shape error of a fundamental soliton over $20L_D$. (d, e) Intensity of $N = 2$ and $N = 3$ solitons over $1.25z_0$. (f) Distance from the input shape; the minimum at $z_0$ is the recurrence.
 
@@ -121,7 +161,7 @@ The linear and soliton limits are reproduced to round-off and to the integrator'
 
 ### 3.2 Conservation, Raman shift and dispersive wave
 
-![Conservation, Raman and dispersive wave](figures/fig2_conservation_raman_dw.png)
+![Energy drift of both integrators, Raman self-frequency shift against the Gordon rate, and a dispersive-wave spectrum](figures/fig2_conservation_raman_dw.png)
 
 **Figure 2.** (a) Energy drift with Kerr and $\beta_2\ldots\beta_{10}$ only, benchmark pulse over 2 cm (through fission): adaptive RK4IP (tol $10^{-10}$) and split step with the exact Kerr step (2000 steps). (b) Mean frequency of a $T_0 = 100$ fs fundamental soliton over $5L_D$ against the Gordon rate. (c) Output spectrum of an $N = 1$ soliton with $\beta_3 = 0.5$ after $10L_D$, with the phase-matched frequency with and without recoil.
 
@@ -131,11 +171,11 @@ The linear and soliton limits are reproduced to round-off and to the integrator'
 
 ### 3.3 The benchmark
 
-![Benchmark evolution](figures/fig3_benchmark_evolution.png)
+![Spectral and temporal evolution of the benchmark over 15 cm](figures/fig3_benchmark_evolution.png)
 
 **Figure 3.** Benchmark evolution over 15 cm on $2^{13}$ points over 12.5 ps (adaptive RK4IP, tol $10^{-8}$: 10 369 steps, 41 485 evaluations). (a) Spectrum (dB) against wavelength and $z$; dashed: $L_D/N$. (b) Temporal intensity (dB); dashed: maximum compression.
 
-![Benchmark output](figures/fig4_benchmark_output.png)
+![Benchmark output spectrum and spectrogram at 15 cm](figures/fig4_benchmark_output.png)
 
 **Figure 4.** (a) Output spectrum at 15 cm and input spectrum; dotted lines at the $-40$ dB edges. (b) Output spectrogram with a 50 fs Gaussian gate.
 
@@ -144,16 +184,16 @@ The linear and soliton limits are reproduced to round-off and to the integrator'
 
 ### 3.4 Solitons in the output
 
-The classifier of §2.4 finds 5 fundamental solitons: the leading one at 3.35 ps (4.8 kW, $T_0 = 16$ fs, 1148 nm) and four in the dense region below 1 ps, at 0.07, 0.43, 0.68 and 0.80 ps. The brief's $N - 1 \approx 8$, or round($N$) = 9, also counts weaker solitons that overlap below 1 ps and cannot be separated cleanly. A plain peak count above a threshold gives anything from 3 to 12, so the count is only meaningful with a physical criterion.
+The classifier of §2.4 finds 5 fundamental solitons. The leading one is at 3.35 ps (4.8 kW, $T_0 = 16$ fs, 1148 nm), and four sit in the dense region below 1 ps, at 0.07, 0.43, 0.68 and 0.80 ps. The brief's $N - 1 \approx 8$, or round($N$) = 9, also counts weaker solitons that overlap below 1 ps and cannot be separated cleanly. A plain peak count above a threshold gives anything from 3 to 12, so the count is only meaningful with a physical criterion.
 
 ### 3.5 Convergence
 
-![Convergence](figures/fig5_convergence.png)
+![Convergence of RK4IP and split step against step size, cost, time window and number of points](figures/fig5_convergence.png)
 
 **Figure 5.** (a) Error at $z = 1$ cm (through fission) against fixed step, full GNLSE, reference RK4IP with 32 768 steps; dotted: $h^4$ and $h^2$. (b) The same error against the number of nonlinear evaluations. (c) Error at 15 cm against the time window ($dt = 1.53$ fs, reference 25 ps). (d) Spectral error at 15 cm against the number of points (window 12.5 ps, reference $2^{15}$).
 
-- **Step size.** For $h \lesssim 10\ \mu$m RK4IP converges as $h^{4.02}$ and the split step as $h^{2.00}$. For $h \gtrsim 20\ \mu$m both are pre-asymptotic (errors $10^{-3}$ to $10^{-1}$), because the step does not resolve the $\sim250\ \mu$m nonlinear length at the compression peak; going from 20 to 10 µm drops the RK4IP error by 90×.
-- **Cost.** At equal error RK4IP needs about 7 000 evaluations for $10^{-6}$ against about 43 000 for the split step (6×), and about 21 000 against about 430 000 for $10^{-8}$ (20×; split-step values extrapolated along its $h^2$ line).
+- **Step size.** For $h \lesssim 10\ \mu$m RK4IP converges as $h^{4.02}$ and the split step as $h^{2.00}$. For $h \gtrsim 20\ \mu$m both are pre-asymptotic (errors $10^{-3}$ to $10^{-1}$), because the step does not resolve the $\sim250\ \mu$m nonlinear length at the compression peak. Going from 20 to 10 µm drops the RK4IP error by 90×.
+- **Cost.** At equal error RK4IP needs about 7 000 evaluations for $10^{-6}$ against about 43 000 for the split step (6×). For $10^{-8}$ it needs about 21 000 against about 430 000 (20×; split-step values extrapolated along its $h^2$ line).
 
 | time window (ps) | 1.5625 | 3.125 | 6.25 | 12.5 |
 |---|---|---|---|---|
@@ -168,7 +208,7 @@ The Raman soliton walks 3.3 ps, so windows of 3 ps or less fail completely. Grid
 
 ### 3.6 Photon number as the invariant (extension E1)
 
-![Photon number](figures/fig6_photon_number.png)
+![Relative change of energy and photon number along the benchmark](figures/fig6_photon_number.png)
 
 **Figure 6.** Relative change of energy and photon number $\sum|\tilde A|^2/(\omega_0+\Omega)$ along the benchmark (full GNLSE, tol $10^{-8}$).
 
@@ -176,17 +216,17 @@ With Raman scattering the energy is not conserved: each scattered photon gives p
 
 ### 3.7 Gordon formula and soliton-order scaling (extensions E2, E3)
 
-![Scaling](figures/fig7_scaling.png)
+![Raman shift over the Gordon rate against T0, and compression and fission scaling with soliton order](figures/fig7_scaling.png)
 
 **Figure 7.** (a) Simulated self-frequency-shift rate over the Gordon rate, minus one, for $T_0 = 30$–300 fs, with a power-law fit for $T_0 \ge 70$ fs. (b) Pure NLS ($T_0 = |\beta_2| = \gamma = 1$): point of maximum compression and compression factor against $N$, with $0.32/N + 1.1/N^2$ and $4.1N$. (c) Full GNLSE on the benchmark fibre: fission distance over $L_D/N$ against $N$, with the NLS law and the $\times1.5$ band.
 
-- **Gordon formula (E2).** The excess falls as $T_0^{-1.95}$ for $T_0 \ge 70$ fs and grows more slowly below 50 fs: 40% at 30 fs, 28% at 50 fs, 7% at 100 fs, 0.9% at 300 fs. This is the expected $(\Omega/\Omega_R)^2 \propto T_0^{-2}$ correction from the curvature of the Raman gain, which the formula linearises around $\Omega = 0$ while a short soliton already samples its rising part (peak near $1/\tau_1 \approx 82$ rad/ps).
-- **Compression (E3a).** The point of maximum compression follows $z_{opt}/z_0 = 0.32/N + 1.1/N^2$ ($N = 16$: 0.0244 against 0.0243) and the compression factor $F_c \approx 4.1N$ ($N = 16$: 65.9 against 65.6; below the line at small $N$, as known).
+- **Gordon formula (E2).** The excess falls as $T_0^{-1.95}$ for $T_0 \ge 70$ fs and grows more slowly below 50 fs: 40% at 30 fs, 28% at 50 fs, 7% at 100 fs, 0.9% at 300 fs. This is the expected $(\Omega/\Omega_R)^2 \propto T_0^{-2}$ correction from the curvature of the Raman gain. The formula linearises the gain around $\Omega = 0$, while a short soliton already samples its rising part (peak near $1/\tau_1 \approx 82$ rad/ps).
+- **Compression (E3a).** The point of maximum compression follows $z_{opt}/z_0 = 0.32/N + 1.1/N^2$ ($N = 16$: 0.0244 against 0.0243). The compression factor follows $F_c \approx 4.1N$ ($N = 16$: 65.9 against 65.6; below the line at small $N$, as known).
 - **Fission (E3b).** The fission distance stays within $\times1.5$ of $L_D/N$ for every $N \ge 3$ and lies above the pure-NLS law: higher-order dispersion and Raman delay fission slightly past the ideal compression point.
 
 ### 3.8 Coherence against pulse duration (extension E4)
 
-![Coherence](figures/fig8_coherence.png)
+![Mean spectra, single shots and coherence g12 for four pump durations](figures/fig8_coherence.png)
 
 **Figure 8.** Ensemble-mean spectrum (dB), five single shots (grey) and $|g_{12}(\lambda)|$ for 16 noise seeds per duration, $P_0 = 10$ kW, 15 cm. The 50 fs runs use 12.5 ps on $2^{14}$ points; longer pulses use 25 ps on $2^{15}$ points (same $dt$).
 
@@ -197,11 +237,11 @@ With Raman scattering the energy is not conserved: each scattered photon gives p
 | 150 fs | 25.9 | **0.07** | $6\times10^{-6}$ |
 | 200 fs | 34.6 | **0.07** | $5\times10^{-6}$ |
 
-The transition between $N \approx 9$ and $N \approx 17$ is sharp, consistent with the rule that supercontinua stay coherent only for $N \lesssim 10$: for longer pulses, noise-seeded modulation instability breaks the pulse up before deterministic fission does. The single shots show the fluctuation that the mean hides. The long pulses need the wider window: on 12.5 ps their most red-shifted Raman solitons walked off the window and wrapped round, putting 16–19% of the energy at the edges. Spontaneous Raman noise is not included and would lower the coherence further.
+The transition between $N \approx 9$ and $N \approx 17$ is sharp, consistent with the rule that supercontinua stay coherent only for $N \lesssim 10$. For longer pulses, noise-seeded modulation instability breaks the pulse up before deterministic fission does. The single shots show the fluctuation that the mean hides. The long pulses need the wider window: on 12.5 ps their most red-shifted Raman solitons walked off the window and wrapped round, putting 16–19% of the energy at the edges. Spontaneous Raman noise is not included and would lower the coherence further.
 
 ### 3.9 Contribution of each term (extension E5)
 
-![Ablation](figures/fig9_ablation.png)
+![Benchmark output spectra with each higher-order term switched on in turn](figures/fig9_ablation.png)
 
 **Figure 9.** Benchmark output (15 cm, $2^{14}$ points) with the higher-order terms switched on in turn.
 
@@ -213,8 +253,6 @@ The transition between $N \approx 9$ and $N \approx 17$ is sharp, consistent wit
 | full GNLSE | 491–1306 nm | 5 791 |
 
 Energy at the spectral edges stays below $3\times10^{-6}$ in every case, so none of these spectra is aliased. Without Raman there is no self-frequency shift: the solitons stay near 900–1000 nm and the red edge comes from dispersive spreading, not from a distinct Raman soliton. Self-steepening moves energy to the blue during compression and lowers the soliton peak powers, which narrows the spectrum. Raman without self-steepening overestimates the broadening; the two terms partly compete, and both are needed for the paper's 490–1310 nm span.
-
----
 
 ## 4. Discussion
 
@@ -235,11 +273,12 @@ Energy at the spectral edges stays below $3\times10^{-6}$ in every case, so none
 - No spontaneous Raman noise in the coherence study.
 - Double precision is slow on consumer GPUs (1/64 of single-precision throughput), so single runs gain nothing from the GPU; only batches do.
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 Supercontinuum/
 ├── supercontinuum/
 │   ├── grid.py       time/frequency grids, Fourier convention, wavelength axis
@@ -261,27 +300,7 @@ Supercontinuum/
 └── Makefile
 ```
 
-## Running
-
-`supercontinuum` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
-
-```bash
-poetry install                                                    # from the repository root
-poetry run pytest -m "not slow" Supercontinuum/tests              # ~35 s
-poetry run pytest Supercontinuum/tests                            # + benchmark, photon number, convergence
-poetry run python Supercontinuum/scripts/run_checks.py --small    # reduced pipeline into results/small/, ~50 s
-poetry run python Supercontinuum/scripts/run_checks.py            # figures 1-5, ~3 min
-poetry run python Supercontinuum/scripts/run_extensions.py        # figures 6-9, ~13 min
-```
-
-The same targets are in the `Makefile` (`make test`, `make test-all`, `make smoke`, `make checks`, `make extensions`). Propagation results are cached in `results/*.pkl` (git-ignored); `--fresh` recomputes them, and `run_extensions.py --redo coherence` recomputes one study.
-
-All propagations run on the GPU in one process. Measured on an AMD Ryzen 7 7840HS with an RTX 3050 6 GB Laptop GPU (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, PyTorch 2.12.0 with CUDA 13):
-
-| | runs | wall time | CPU | peak host RAM | peak GPU memory |
-|---|---|---|---|---|---|
-| `run_checks.py` | 41 | 189 s | 1 core | 1.5 GB | 0.6 GB |
-| `run_extensions.py` | 96 | ~13 min (coherence 10 min) | 1 core | 1.3 GB | ~0.7 GB |
+</details>
 
 ## References
 

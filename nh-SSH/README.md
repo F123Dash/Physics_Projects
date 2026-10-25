@@ -1,11 +1,35 @@
 # Non-Hermitian SSH Model
-### Skin effect, biorthogonal bulk–boundary correspondence and when `eig` stops being trustworthy
+
+*Skin effect, biorthogonal bulk–boundary correspondence and when `eig` stops being trustworthy.*
+
+<p align="center">
+  <img src="figures/fig4_phase_diagram.png" width="760" alt="Phase diagram in the (t1, gamma) plane: smallest open-chain energy and biorthogonal polarisation, bounded by the OBC transition curves rather than the Bloch gap closings">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="nh-SSH.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
 
 A NumPy reproduction of Kunst, Edvardsson, Budich and Bergholtz, *Biorthogonal bulk-boundary correspondence in non-Hermitian systems* (PRL **121**, 026808, 2018). The model is the SSH chain with non-reciprocal intracell hopping. Its open-chain edge states appear and disappear far from where the Bloch bands close. The code shows the mismatch between the periodic and open spectra and the skin effect in the left and right eigenvectors. It maps the open chain exactly onto a Hermitian SSH chain, builds the $(t_1, \gamma)$ phase diagram, and implements the paper's biorthogonal polarisation $P$. All of this is checked against closed forms, and the closed forms are used to find out where the standard eigensolver starts returning wrong answers.
 
-Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (48 tests in `tests/`). Derivations and the full report are in [`nh-SSH.pdf`](nh-SSH.pdf).
+> [!NOTE]
+> Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (48 tests in `tests/`). Derivations and the full report are in [`nh-SSH.pdf`](nh-SSH.pdf).
 
----
+## Quick start
+
+`nh_ssh` is installed as part of the repository's Poetry environment. pytest is in the `dev` group and mpmath is a main dependency.
+
+```bash
+poetry install                                          # from the repository root
+poetry run pytest nh-SSH/tests                          # ~1 s
+poetry run python nh-SSH/scripts/make_figures.py        # ~35 s on 16 cores, ~18 s of it the mpmath check
+poetry run python nh-SSH/scripts/make_figures.py --skip-mpmath
+```
+
+Runtimes were measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). The `results.txt` header records the versions, because the eigensolver errors in §3.6 depend on the LAPACK build.
 
 ## Summary of results
 
@@ -27,7 +51,9 @@ $\gamma = 4/3$, $t_2 = 1$ unless stated.
 | Largest $N$ with `eig` error $< 10^{-10}$, $t_1 = 0.7$ | $N = 37$; error $6\times10^{-14} \to 5\times10^{-8}$ at $N = 38$ | | `test_eig_accurate_below_76_sites`, `test_eig_fails_at_large_N` |
 | 60-digit mpmath, $N = 40$, $t_1 = 0.7$ | exact formula agrees to $\le 10^{-15}$; `eig` is off by $3.7\times10^{-5}$ | | `test_imaginary_v_prime_partner_against_mpmath` (smaller case) |
 
-**Corrections to the brief** (details in the sections below):
+### Corrections to the brief
+
+Details are in the sections below.
 
 1. The similarity transformation needs different factors on the A and B sites of a cell (they differ by $s$), not one factor $s^{-n}$ per cell. With the per-cell version the intracell bond stays non-reciprocal (§1).
 2. The point where `eig` fails is set by the matrix size at which LAPACK switches QR algorithm (76 sites here), not by $s^N$ reaching $1/\epsilon$. For 75 sites or fewer the error stays at $10^{-13}$ even at $|s|^N = 10^{48}$ (§3.6).
@@ -35,8 +61,6 @@ $\gamma = 4/3$, $t_2 = 1$ unless stated.
 4. The decay factor $0.159 \approx 1/s$ belongs to the bulk (skin) eigenvectors. The zero mode itself decays much faster, by $|r_R| = |t_1-\gamma/2|/t_2 = 0.033$ per cell at $t_1 = 0.7$.
 5. For $\gamma > 2t_2$ there is a second OBC transition at $t_1 = \sqrt{\gamma^2/4 - t_2^2}$. It is part of Eq. (9) of the paper, but the brief only lists the first.
 6. For an even number of A sites, $P$ is undefined at $r_L^* r_R = -1$, where $\langle\psi_L|\psi_R\rangle = 0$. This sits exactly on the second transition. Odd chains avoid it (§3.5).
-
----
 
 ## 1. The model
 
@@ -51,7 +75,7 @@ This is Eq. (8) of Kunst *et al.*, with $f_\pm = t_1 \mp \gamma/2$ and $g_\pm = 
 **Bloch Hamiltonian.**
 
 $$
-H(k) = \begin{pmatrix} 0 & t_1 + \gamma/2 + t_2 e^{-ik} \\ t_1 - \gamma/2 + t_2 e^{ik} & 0 \end{pmatrix}, \qquad E(k)^2 = (t_1 + \tfrac{\gamma}{2} + t_2 e^{-ik})(t_1 - \tfrac{\gamma}{2} + t_2 e^{ik}).
+H(k) = \begin{pmatrix} 0 & t_1 + \gamma/2 + t_2 e^{-ik} \\ t_1 - \gamma/2 + t_2 e^{ik} & 0 \end{pmatrix}, \qquad E(k)^2 = (t_1 + \tfrac{\gamma}{2} + t_2 e^{-ik})(t_1 - \tfrac{\gamma}{2} + t_2 e^{ik})
 $$
 
 The periodic gap closes where either factor vanishes, $|t_1 \pm \gamma/2| = t_2$. For $\gamma = 4/3$ that is $t_1 = 1/3$ and $5/3$. These are also the exceptional points of $H(k)$.
@@ -59,8 +83,6 @@ The periodic gap closes where either factor vanishes, $|t_1 \pm \gamma/2| = t_2$
 **Chiral symmetry.** $\Gamma = \mathrm{diag}(1,-1,1,-1,\dots)$ gives $\Gamma H \Gamma = -H$, so the spectrum comes in $\pm E$ pairs and zero modes can sit on one sublattice.
 
 **Left and right eigenvectors.** $H \ne H^\dagger$, so $H|R_n\rangle = E_n|R_n\rangle$ and $H^\dagger|L_n\rangle = E_n^*|L_n\rangle$ are different sets. We normalise them biorthogonally, $\langle L_m|R_n\rangle = \delta_{mn}$. Only the product of the two normalisations is fixed. `biorthogonal_eig` sets $\|R_n\| = 1$ and puts the rest into $L_n$.
-
----
 
 ## 2. Method
 
@@ -114,19 +136,17 @@ with $\Pi_n$ the projector onto cell $n = 1, \dots, N$. Since $\langle\Pi_n\rang
 
 Each `eig` result is compared with `exact_open_spectrum`. Large-$N$ spot checks use 60-digit `mpmath.eig`. The condition number of the right-eigenvector matrix, $\mathrm{cond}(R)$, measures how non-normal the matrix is.
 
----
-
 ## 3. Results
 
 ### 3.1 Periodic vs open spectrum
 
-![spectra](figures/fig1_spectra.png)
+![Periodic spectrum as a complex loop against the real open-chain spectrum, and open-chain energies against t1](figures/fig1_spectra.png)
 
 **Figure 1.** (a) Complex spectrum at $t_1 = 0.7$. The periodic spectrum (grey) is a closed loop with $|\mathrm{Im}\,E|$ up to $0.667$. The open chain ($N = 30$, blue) has a real spectrum ($\mathrm{Im}\,E = 0$ exactly) with a zero-mode pair at the origin, nowhere near the loop. (b) $|E|$ of a 30-cell open chain against $t_1$. The two states nearest zero (orange) leave $E = 0$ at the OBC transition $t_1 = 1.2019$ (dashed). Nothing happens at the Bloch gap closings $t_1 = 1/3,\ 5/3$ (dotted). At the exceptional point $t_1 = \gamma/2$ all bulk levels meet at $|E| = t_2$. To its left $v'$ is imaginary and the bulk spectrum is complex.
 
 ### 3.2 Skin effect
 
-![skin](figures/fig2_skin.png)
+![Weight per cell of all eigenvectors: right eigenvectors pile up at the left end, left eigenvectors at the right end](figures/fig2_skin.png)
 
 **Figure 2.** Weight per cell of all 40 eigenvectors of a 20-cell chain at $t_1 = 1.0$ (grey), with three highlighted. (a) Right eigenvectors all pile up at the left end, (b) left eigenvectors at the right end. The dashed lines are $|s|^{\mp 2n}$ with $|s| = \sqrt5 = 2.236$.
 
@@ -140,7 +160,7 @@ The decay factor is a fit to the summed cell weight of the bulk eigenvectors. Su
 
 ### 3.3 Open chain vs the exact solution
 
-![exact](figures/fig3_open_vs_exact.png)
+![Smallest open-chain energy against N below, at and above the transition, and the finite-size crossing ratio](figures/fig3_open_vs_exact.png)
 
 **Figure 3.** (a) $\min|E|$ against $N$. Below the transition (blue) it decays exponentially; the lines are the SSH splitting formula with $v \to v'$. At the transition (black, $t_1 = 1.2019$) it decays as $1/N$, and above it (orange) it levels off at the gap. (b) The ratio $\min|E|_{30}/\min|E|_{20}$ against the distance from $\sqrt{t_2^2+\gamma^2/4}$, for four values of $\gamma$. All four curves pass through the critical value $\log_{10}(41/61)$ at zero.
 
@@ -156,7 +176,7 @@ The $t_1 = 1.0$ and $1.4$ rows reproduce the brief's table. At $t_1 = 0.5$, $N =
 
 ### 3.4 Phase diagram
 
-![phase](figures/fig4_phase_diagram.png)
+![Phase diagram from eig and the biorthogonal polarisation of the odd chain](figures/fig4_phase_diagram.png)
 
 **Figure 4.** (a) $\log_{10}\min|E|$ of a 30-cell open chain from `eig`, on a $201\times151$ grid. Orange: OBC transitions $|t_1^2 - \gamma^2/4| = t_2^2$. Green dashed: Bloch gap closings. Purple: exceptional line $t_1 = \gamma/2$. Yellow crosses: grid points where `eig`'s $\min|E|$ is wrong by more than a factor of 2 (see below). (b) Biorthogonal polarisation from the numerical zero mode of the odd chain ($N = 31$).
 
@@ -175,11 +195,11 @@ The offset is the $1/N$ term: at the transition $P_N = 1/2 - 1/(2N)$.
 
 ### 3.5 Edge-state densities and the polarisation
 
-![densities](figures/fig5_densities.png)
+![Right, left and biorthogonal zero-mode densities of the odd and even chains](figures/fig5_densities.png)
 
 **Figure 5.** (a) Exact zero mode of the odd chain ($N = 20$, $t_1 = 1.0$). $|\psi_R|^2$ decays from the left with $r_R = -1/3$, and $|\psi_L|^2$ grows towards the *right* with $r_L = -5/3$. Each alone suggests a different end. The biorthogonal density $\langle\Pi_n\rangle$ (black diamonds) decays from the left as $x^n$, $x = r_L^* r_R = 0.556$ (line), to $3.4\times10^{-13}$. (b) The two Γ-rotated edge states of the even chain ($N = 20$). $L^*R$ (symbols) lies on the Hermitian SSH$(v', t_2)$ edge densities (lines), with a maximum difference of $2.8\times10^{-12}$. The dotted lines show $|R|^2$ alone, which overstates the localisation of the A-end state and puts the B-end state at the wrong end.
 
-![polarisation](figures/fig6_polarization.png)
+![Biorthogonal polarisation against t1 for chain lengths from 11 to 1001](figures/fig6_polarization.png)
 
 **Figure 6.** Biorthogonal polarisation against $t_1$. Lines: closed form for $N = 11$ to $1001$ (light to dark). Circles: from `eig` at $N = 21$. Dashed: OBC transitions. Dotted: Bloch gap closings. (a) $\gamma = 4/3$. (b) $\gamma = 3$, the parameters of Fig. 1 of the paper, with two OBC transitions at $t_1 = 1.118$ and $1.803$.
 
@@ -196,7 +216,7 @@ $P$ steps between 0 and 1 at the OBC transitions and ignores the Bloch values. T
 
 ### 3.6 Numerical accuracy
 
-![accuracy](figures/fig7_accuracy.png)
+![eig eigenvalue error and eigenvector condition number against chain length](figures/fig7_accuracy.png)
 
 **Figure 7.** (a) Largest distance from an `eig` eigenvalue to the exact spectrum, against $N$, for three values of $t_1$. Grey: the Hermitian control $\gamma = 0$. Star: 60-digit mpmath at $N = 40$, $t_1 = 0.7$, compared with the exact formula. (b) Condition number of the right-eigenvector matrix (symbols) and $|s|^N$ (lines).
 
@@ -208,16 +228,14 @@ $P$ steps between 0 and 1 at the OBC transitions and ignores the Bloch values. T
 
 The brief expects the eigensolver to fail once $s^N$ approaches $1/\epsilon \approx 10^{16}$, i.e. $N \approx 20$ at $t_1 = 0.7$. That is not what happens. $\mathrm{cond}(R)$ does follow $|s|^N$ (panel b, up to $10^{24}$ at $N = 30$), yet the eigenvalues stay accurate to $10^{-13}$. Then all three curves jump together between $N = 37$ and $N = 38$, i.e. between 74 and 76 sites; with the extra site, 75 sites is still fine. LAPACK's `dhseqr` uses the small double-shift QR up to $n = 75$ (the `NMIN` crossover in `iparmq`) and the multishift QR with aggressive early deflation above that. The second algorithm is the one that breaks on these graded matrices. At $t_1 = 0.7$ the error jumps from $6\times10^{-14}$ to $5\times10^{-8}$ over that single step. Above it, the size of the error does grow with $|s|$. The Hermitian control stays below $3\times10^{-14}$ up to $N = 100$.
 
-**Answer to the brief's question.** With NumPy 2.4.6 on OpenBLAS 0.3.31, `eig` is wrong (error $> 10^{-10}$) from $N = 38$ cells at $t_1 = 0.7$, $N = 40$ at $t_1 = 1.4$ and $N = 42$ at $t_1 = 1.0$. At $N = 40$, $t_1 = 0.7$, 60-digit mpmath agrees with the exact formula to $\le 10^{-15}$, and `eig` is off by $3.7\times10^{-5}$. The step is set by a LAPACK tuning parameter, so a different build can move it. That is why the phase diagram uses $N = 30$ and every result here is checked against the exact solution.
-
----
+**Answer to the brief's question.** With NumPy 2.4.6 on OpenBLAS 0.3.31, `eig` is wrong (error $> 10^{-10}$) from $N = 38$ cells at $t_1 = 0.7$. The thresholds are $N = 40$ at $t_1 = 1.4$ and $N = 42$ at $t_1 = 1.0$. At $N = 40$, $t_1 = 0.7$, 60-digit mpmath agrees with the exact formula to $\le 10^{-15}$, and `eig` is off by $3.7\times10^{-5}$. The step is set by a LAPACK tuning parameter, so a different build can move it. That is why the phase diagram uses $N = 30$ and every result here is checked against the exact solution.
 
 ## 4. Discussion
 
 1. **Why is $H \neq H^\dagger$ enough to make left and right eigenvectors differ?** $\langle L|$ is a left eigenvector of $H$, i.e. a right eigenvector of $H^\dagger$. If $H^\dagger \neq H$, their eigenvectors differ in general. Here the difference is explicit: $R = D\psi$ and $L = D^{-\dagger}\psi$, and they are equal only when $D$ is unitary, i.e. $|s| = 1$, i.e. $\gamma = 0$.
-2. **Why does the Bloch winding fail?** The Bloch Hamiltonian describes plane waves, $|e^{ikn}| = 1$. The open-chain eigenstates are not plane waves: they grow or decay as $|s|^{\mp n}$ (fig. 2). The periodic spectrum (the loop in fig. 1a) is the spectrum of a different operator. The open chain is similar to SSH$(v', t_2)$, so its topology is the winding of $v' + t_2e^{ik}$, which changes at $|v'| = t_2$. In the language of Yao and Wang (project 4), the open chain lives on the generalised Brillouin zone $|e^{ik}| = 1/|s|$, not on the unit circle.
+2. **Why does the Bloch winding fail?** The Bloch Hamiltonian describes plane waves, $|e^{ikn}| = 1$. The open-chain eigenstates are not plane waves: they grow or decay as $|s|^{\mp n}$ (fig. 2). The periodic spectrum (the loop in fig. 1a) is the spectrum of a different operator. The open chain is similar to SSH$(v', t_2)$, so its topology is the winding of $v' + t_2e^{ik}$, which changes at $|v'| = t_2$. In the language of Yao and Wang (the [non-Bloch](../non-Bloch/README.md) project), the open chain lives on the generalised Brillouin zone $|e^{ik}| = 1/|s|$, not on the unit circle.
 3. **What does the similarity map do?** It leaves the spectrum unchanged and moves every eigenvector by the same exponential profile $D$. Observables built from $L^*R$ (densities, $P$) don't see $D$ at all. Observables built from $|R|^2$ alone carry the full skin profile.
-4. **When not to trust `numpy.linalg.eig`.** When the matrix is strongly non-normal, which is what $\mathrm{cond}(R) \gg 1$ signals. Here that means $10^{24}$ at $N = 30$. Fig. 7 shows that a bound in $\mathrm{cond}(R)$ is too pessimistic below 76 sites and that something else entirely sets the failure above. Fig. 4 shows that even a small absolute error can make the smallest eigenvalue wrong by orders of magnitude. What helps: an exact reference (here, the Hermitian partner), a high-precision recomputation (mpmath) at a few sizes, a check against $N$ and against algorithm (`eig` vs `schur`), and staying below the size where the check fails.
+4. **When not to trust `numpy.linalg.eig`.** When the matrix is strongly non-normal, which is what $\mathrm{cond}(R) \gg 1$ signals. Here that means $10^{24}$ at $N = 30$. Fig. 7 shows that a bound in $\mathrm{cond}(R)$ is too pessimistic below 76 sites and that something else entirely sets the failure above. Fig. 4 shows that even a small absolute error can make the smallest eigenvalue wrong by orders of magnitude. Four things help. Use an exact reference (here, the Hermitian partner) and a high-precision recomputation (mpmath) at a few sizes. Check against $N$ and against algorithm (`eig` vs `schur`), and stay below the size where the check fails.
 
 ## 5. What I would ask Dr. Kunst
 
@@ -228,11 +246,12 @@ The brief expects the eigensolver to fail once $s^N$ approaches $1/\epsilon \app
 - **Numerics in larger systems.** For the 2D Chern-insulator example and $N = 46$, the eigenvector condition numbers must be huge. How were the spectra in Fig. 2 checked, and is high-precision arithmetic standard practice in the group?
 - **Relation to the GBZ winding.** For this model $P$ and the non-Bloch winding of Yao and Wang give the same phase diagram. Is there a model where they disagree, for example one without an exactly solvable zero mode?
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 nh-SSH/
 ├── nh_ssh/
 │   ├── model.py            H_open (odd/even), H_bloch, Bloch closings, v', s, similarity D, partner chain
@@ -246,18 +265,7 @@ nh-SSH/
 └── nh-SSH.pdf              the project report
 ```
 
-## Running
-
-`nh_ssh` is installed as part of the repository's Poetry environment. pytest is in the `dev` group and mpmath is a main dependency.
-
-```bash
-poetry install                                          # from the repository root
-poetry run pytest nh-SSH/tests                          # ~1 s
-poetry run python nh-SSH/scripts/make_figures.py        # ~35 s on 16 cores, ~18 s of it the mpmath check
-poetry run python nh-SSH/scripts/make_figures.py --skip-mpmath
-```
-
-Runtimes were measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). The `results.txt` header records the versions, because the eigensolver errors in §3.6 depend on the LAPACK build.
+</details>
 
 ## References
 

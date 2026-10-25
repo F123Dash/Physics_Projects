@@ -1,11 +1,35 @@
 # SSH Model
-### Topology, edge states and disorder in the Su–Schrieffer–Heeger chain
 
-A NumPy implementation of the Su–Schrieffer–Heeger (SSH) chain, the simplest model of a one-dimensional topological insulator. The code computes the bulk winding number and Zak phase, shows the zero-energy edge states of an open chain, reproduces their localisation length and finite-size splitting, and follows the real-space winding number of Mondragon-Shem *et al.* as the hoppings become disordered, up to and including the topological Anderson insulator.
+*Topology, edge states and disorder in the Su–Schrieffer–Heeger chain.*
 
-Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every claim in the validation table is checked by a unit test (55 tests in `tests/`).
+<p align="center">
+  <img src="figures/fig2_open_spectrum.png" width="560" alt="Energy levels of a 40-cell open SSH chain against v/w: two states stay pinned at E = 0 while v < w and leave zero at v = w">
+</p>
 
----
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="SSH-model.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
+
+A NumPy implementation of the Su–Schrieffer–Heeger (SSH) chain, the simplest model of a one-dimensional topological insulator. The code computes the bulk winding number and Zak phase, and shows the zero-energy edge states of an open chain. It reproduces their localisation length and finite-size splitting. It then follows the real-space winding number of Mondragon-Shem *et al.* as the hoppings become disordered, up to and including the topological Anderson insulator.
+
+> [!NOTE]
+> Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every claim in the validation table is checked by a unit test (55 tests in `tests/`).
+
+## Quick start
+
+`ssh_model` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
+
+```bash
+poetry install                                        # from the repository root
+poetry run pytest SSH-model/tests                     # ~2 s
+poetry run python SSH-model/scripts/make_figures.py   # ~12 min on 16 cores, then cached
+poetry run python SSH-model/scripts/make_figures.py --quick   # 20 realisations per point
+```
+
+The disorder results are cached in `figures/*.npz` (git-ignored). Delete those files to recompute.
 
 ## Summary of results
 
@@ -14,7 +38,7 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 | Winding number for $v \neq w$ (50 values of $v/w$) | integer to $2.5\times10^{-16}$ | exactly 0 or 1 |
 | Open chain, $N = 60$, $v/w = 0.5$: smallest $\|E\|$ | $2.2\times10^{-16}$ | $< 10^{-10}$ |
 | Open chain, $N = 60$, $v/w = 1.5$: smallest $\|E\|$ | $0.504\,w$ | $\approx \|v-w\| = 0.5\,w$ |
-| Localisation length $\xi$, $v/w = 0.3,\ 0.5,\ 0.7$ | $0.830584,\ 1.442695,\ 2.803673$ (rel. error $< 2\times10^{-13}$, round-off) | $1/\ln(w/v)$ within 2% |
+| Localisation length $\xi$, $v/w = 0.3,\ 0.5,\ 0.7$ | $0.830584,\ 1.442695,\ 2.803673$ (relative error $< 2\times10^{-13}$, round-off) | $1/\ln(w/v)$ within 2% |
 | Edge-splitting slope, $v/w = 0.5,\ 0.7$ | $-0.69316,\ -0.35706$ | $\ln(v/w) = -0.69315,\ -0.35667$ |
 | Edge-splitting prefactor $\varepsilon/(v/w)^N$, $w = 2$, $v = 1$ | $1.500$ | $w\,(1-(v/w)^2) = 1.5$ |
 | Zak phase | $\pi$ for $v<w$, $0$ for $v>w$ (error $\le 1.3\times10^{-15}$) | $\pi\nu$ |
@@ -22,8 +46,6 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 | Real-space winding, clean chain | equals the Bloch winding to $10^{-9}$ | 0 or 1 |
 | Real-space winding, disorder ($v = 0.5$, $W_w = W_v/2$) | $1.000 \pm 0.003$ up to $W = 3.25$; drops to 0 by $W \approx 4.5$ | transition at $W_c = 3.959$ |
 | Topological Anderson insulator ($v = 1.2$) | $\nu$ rises from 0 to $0.68 \pm 0.04$ at $W = 2.75$ | $\nu = 1$ for $2.299 < W < 3.515$ |
-
----
 
 ## 1. The model
 
@@ -44,8 +66,6 @@ The gap is $2|v-w|$, at $k = \pi$, and closes only when $v = w$.
 **Chiral symmetry.** With $\Gamma = \sigma_z$, $\Gamma H \Gamma = -H$. The spectrum is therefore symmetric about $E = 0$, and any zero-energy state can be chosen to live on one sublattice only. This symmetry protects the topology.
 
 **Open chain.** `H_open(N, v, w)` builds the $2N\times2N$ real-space matrix with sites ordered $A_0, B_0, A_1, B_1, \dots$. It accepts either scalar hoppings or arrays of $N$ intracell and $N-1$ intercell hoppings, which is how disorder enters.
-
----
 
 ## 2. Method
 
@@ -119,25 +139,23 @@ and `critical_disorder` solves for the crossing.
 
 Each point in fig. 6 averages 100 realisations, and the error bars are standard errors of the mean. The realisations run in parallel, with an independent seeded random stream per chunk, so the results are reproducible.
 
----
-
 ## 3. Results
 
 ### 3.1 Bulk bands and winding number
 
-![bulk](figures/fig1_bulk.png)
+![Bulk SSH bands for three values of v and the curve h(k) winding around the origin](figures/fig1_bulk.png)
 
 **Figure 1.** (a) Bulk bands for $w = 1$ and $v = 0.5$ (topological), $1.0$ (critical) and $1.5$ (trivial). The gap $2|v - w|$ closes at $k = \pi$ when $v = w$. (b) The curve $h(k)$ in the complex plane, with arrows showing the direction of increasing $k$. The circle encloses the origin (black dot) only for $v < w$, which gives $\nu = 1$. At $v = w$ it passes through the origin.
 
 ### 3.2 Open-chain spectrum
 
-![open spectrum](figures/fig2_open_spectrum.png)
+![Open-chain spectrum against v/w with two zero modes in the topological region](figures/fig2_open_spectrum.png)
 
 **Figure 2.** Spectrum of a 40-cell open chain against $v/w$. In the shaded topological region ($v < w$), two states are pinned at $E = 0$: at $N = 60$ and $v/w = 0.5$ their energy is $2.2\times10^{-16}$, i.e. machine zero. For $v > w$ the lowest states sit at the bulk band edge: at $v/w = 1.5$, $\min|E| = 0.504 \approx |v - w|$.
 
 ### 3.3 Edge-state profile and localisation length
 
-![edge profile](figures/fig3_edge_profile.png)
+![Zero-mode profiles on sublattices A and B, and their exponential decay](figures/fig3_edge_profile.png)
 
 **Figure 3.** (a) The two zero modes after separation by sublattice weight. The left state lives only on A and the right state only on B; the weight on the wrong sublattice is below $10^{-30}$. (b) $|\psi_A(n)|$ for three values of $v/w$ on a 100-cell chain (symbols), with the analytic $e^{-n/\xi}$, $\xi = 1/\ln(w/v)$ (lines).
 
@@ -151,7 +169,7 @@ The agreement is at machine precision, not merely within the 2% target. The rela
 
 ### 3.4 Edge-state splitting
 
-![splitting](figures/fig4_splitting.png)
+![Edge-state splitting against chain length on a semilog scale](figures/fig4_splitting.png)
 
 **Figure 4.** (a) $\varepsilon = \min|E|$ against chain length. The symbols are exact diagonalisation and the lines are $w(1-(v/w)^2)(v/w)^N$. (b) $\varepsilon/(v/w)^N$, which converges to the dashed prefactor within about 10 cells.
 
@@ -169,13 +187,13 @@ $$
 
 ### 3.5 Bulk invariants: winding number and Zak phase
 
-![invariants](figures/fig5_invariants.png)
+![Winding number and Zak phase against v/w](figures/fig5_invariants.png)
 
 **Figure 5.** (a) Winding number against $v/w$. It is an integer to $2.5\times10^{-16}$ and jumps only at the gap closing. (b) Zak phase from the 400-point Wilson loop: $|\gamma| = \pi$ for $v < w$ and $0$ for $v > w$, with error $\le 1.3\times10^{-15}$. The crosses repeat the calculation with a random phase on every $u(k_j)$; they agree to $2.5\times10^{-15}$, confirming gauge invariance. This confirms $\gamma = \pi\nu$ (mod $2\pi$).
 
 ### 3.6 Real-space winding under disorder
 
-![disorder](figures/fig6_disorder.png)
+![Disorder-averaged real-space winding number against disorder strength](figures/fig6_disorder.png)
 
 **Figure 6.** (a) Disorder-averaged real-space winding number on a 200-cell chain, with the trace over the central 100 cells. Dashed lines mark the predicted transitions $\langle\ln|v_n|\rangle = \langle\ln|w_n|\rangle$, in the colour of the matching curve. (b) Finite-size dependence at fixed disorder for $N = 50$ to $800$, with the trace over the central $N/2$ cells. 100 realisations per point throughout.
 
@@ -185,8 +203,6 @@ $$
 
 **Equal disorder on both hoppings, $W_v = W_w = W$ (green).** This is the disorder model in the project brief. For $v = 0.5$, $w = 1$ the two log-averages never cross: $\langle\ln|0.5 + Wr|\rangle < \langle\ln|1 + Wr|\rangle$ for every $W$, with the difference vanishing only as $W\to\infty$. The chain is therefore topological at all disorder strengths. The drop of the green curve in (a) is a finite-size effect, not a transition. Panel (b) confirms this: $\nu$ climbs back towards 1 as $N$ grows, from $0.50$ to $0.97$ at $W = 3$ and from $0.28$ to $0.75$ at $W = 5$. The localisation length at $E = 0$ grows as the two log-averages approach each other, so larger disorder needs larger chains.
 
----
-
 ## 4. Discussion
 
 1. **Why can't the winding change without the gap closing?** $\nu$ counts how many times $h(k)$ encircles the origin. A continuous deformation can change that count only by passing $h(k)$ through the origin, i.e. by making $E(k) = |h(k)| = 0$ somewhere. With disorder the same role is played by the mobility gap: $\nu$ changes only where the $E = 0$ localisation length diverges, at $\langle\ln|v|\rangle = \langle\ln|w|\rangle$.
@@ -194,11 +210,12 @@ $$
 3. **Dependence of the Zak phase on the unit cell.** Choosing the cell as $(B_n, A_{n+1})$ instead of $(A_n, B_n)$ swaps $v \leftrightarrow w$ and exchanges $\gamma = \pi$ and $0$. Moving the origin inside the cell shifts $\gamma$ continuously through the $e^{ikx}$ embedding phase. The Zak phase is a polarisation and is defined only once the origin is fixed. What is physical is the difference between phases, and the edge-state count for a given termination.
 4. **What "topologically protected" means.** For any perturbation that keeps chiral symmetry and keeps the $E = 0$ states localised, the zero modes stay pinned at exactly $E = 0$, sublattice-polarised and exponentially localised. In fig. 6 that holds up to $W \approx 3.25$. Protection fails when chiral symmetry is broken (on-site terms, next-nearest-neighbour hopping), when the localisation length diverges ($W \to W_c$), or when the chain is so short that the two ends hybridise ($\varepsilon \propto e^{-N/\xi}$, fig. 4).
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 SSH-model/
 ├── ssh_model/
 │   ├── hamiltonian.py      H_k, H_open, chiral operator, cell positions
@@ -212,18 +229,7 @@ SSH-model/
 └── SSH-model.pdf           the project report
 ```
 
-## Running
-
-`ssh_model` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
-
-```bash
-poetry install                                        # from the repository root
-poetry run pytest SSH-model/tests                     # ~2 s
-poetry run python SSH-model/scripts/make_figures.py   # ~12 min on 16 cores, then cached
-poetry run python SSH-model/scripts/make_figures.py --quick   # 20 realisations per point
-```
-
-The disorder results are cached in `figures/*.npz` (git-ignored). Delete those files to recompute.
+</details>
 
 ## References
 

@@ -1,11 +1,35 @@
 # Berry Phase and Non-Abelian Holonomy
-### From a spin in a rotating field to the tripod's U(2) gauge field
 
-A NumPy/SciPy implementation of geometric phases computed without ever differentiating an eigenvector. **Part A** computes the Berry phase of a spin-1/2 in a precessing field from the gauge-invariant discrete formula and checks it four ways: against the solid angle, against a closed form at finite discretisation, against direct time evolution, and against the exact rotating-frame solution, including the non-adiabatic correction. **Part B** builds the dark subspace of the tripod atom, computes its U(2) holonomy as a Wilson loop, confirms it by integrating the full four-level Schrödinger equation, and shows that two loops traversed in opposite order leave the atom in different states.
+*From a spin in a rotating field to the tripod's U(2) gauge field.*
 
-Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every claim in the table is checked by a unit test (87 tests in `tests/`, about 1 s). Derivations are in the report, [`Berry-phase.pdf`](Berry-phase.pdf).
+<p align="center">
+  <img src="figures/fig4_loop_order.png" width="760" alt="Dark-state population during two tripod loops traversed in opposite order, ending in different states with overlap 0.251">
+</p>
 
----
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="Berry-phase.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
+
+A NumPy/SciPy implementation of geometric phases computed without ever differentiating an eigenvector.
+
+- **Part A** computes the Berry phase of a spin-1/2 in a precessing field from the gauge-invariant discrete formula. It checks the result four ways: against the solid angle, against a closed form at finite discretisation, against direct time evolution, and against the exact rotating-frame solution, including the non-adiabatic correction.
+- **Part B** builds the dark subspace of the tripod atom and computes its U(2) holonomy as a Wilson loop. It confirms the holonomy by integrating the full four-level Schrödinger equation, and shows that two loops traversed in opposite order leave the atom in different states.
+
+> [!NOTE]
+> Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every claim in the table is checked by a unit test (87 tests in `tests/`, about 1 s). Derivations are in the report, [`Berry-phase.pdf`](Berry-phase.pdf).
+
+## Quick start
+
+`berry_phase` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
+
+```bash
+poetry install                                        # from the repository root
+poetry run pytest Berry-phase/tests                   # ~1 s
+poetry run python Berry-phase/scripts/make_figures.py # ~6 s
+```
 
 ## Summary of results
 
@@ -26,8 +50,6 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 | Loop order, overlap of final states | $0.2523$ (Wilson), $0.2508$ (evolution) | $< 1$ |
 | Same, Abelian control (all couplings real) | $1.000000000000$ | $1$ |
 
----
-
 ## 1. The models
 
 **Spin-1/2.** $H(t) = \tfrac{\omega_0}{2}\,\hat n(t)\cdot\boldsymbol\sigma$ with $\hat n = (\sin\theta\cos\varphi, \sin\theta\sin\varphi, \cos\theta)$ and $\varphi = \Omega t$. The aligned eigenstate, in a gauge single-valued in $\varphi$, is $|+\rangle = (\cos\tfrac\theta2,\ e^{i\varphi}\sin\tfrac\theta2)$, with energy $+\omega_0/2$.
@@ -42,8 +64,6 @@ $$
 The spectrum is $\{0, 0, \pm\Omega_0\}$ for all parameters. The two zero-energy dark states span the null space of the row $(\Omega_1, \Omega_2, \Omega_3)$, and the gap to the bright pair is $\Omega_0$ everywhere. Only the phase $S$ of laser 3 is varied: the parameter space is $x = (\theta, \varphi, S)$.
 
 **Conventions** (fixed once, [`Berry-phase.pdf`](Berry-phase.pdf) §0). $\hbar = 1$; $A = i\langle u|\nabla u\rangle$; $\gamma = \oint A\cdot dR$; the adiabatic factor is $e^{+i\gamma}$; $U = \mathcal P\exp(i\oint A)$ acts on dark-state components with later times to the left.
-
----
 
 ## 2. Method
 
@@ -71,7 +91,7 @@ $$
 \psi_{n+1} = e^{-iK}\psi_n,\qquad K = \tfrac h2(H_1 + H_2) - i\,\tfrac{\sqrt3}{12}h^2\,[H_2, H_1].
 $$
 
-Each step is exactly unitary, so norm loss cannot masquerade as leakage. The exponential is taken by `eigh` for all steps at once. It is checked against `expm` for constant $H$, against the exact rotating-frame solution $\psi(t) = e^{-i\Omega t\sigma_z/2}e^{-iH_{\rm rot}t}\psi(0)$, $H_{\rm rot} = H(0) - \tfrac\Omega2\sigma_z$, and for its order of convergence: halving $h$ cuts the error by 16.
+Each step is exactly unitary, so norm loss cannot masquerade as leakage. The exponential is taken by `eigh` for all steps at once. It is checked against `expm` for constant $H$ and against the exact rotating-frame solution $\psi(t) = e^{-i\Omega t\sigma_z/2}e^{-iH_{\rm rot}t}\psi(0)$, $H_{\rm rot} = H(0) - \tfrac\Omega2\sigma_z$. Its order of convergence is checked too: halving $h$ cuts the error by 16.
 
 **Geometric phase from dynamics.** Following the brief, $\gamma_{\rm ext} = \arg\langle\psi(0)|\psi(T)\rangle + \tfrac{\omega_0}{2}T$ after one period $T = 2\pi/\Omega$. Because $R(T) = -1$, the rotating-frame solution gives $\gamma_{\rm ext}$ in closed form at any $\Omega$ (`spin_geometric_phase_exact`). Expanding it in $\varepsilon = \Omega/\omega_0$:
 
@@ -95,13 +115,11 @@ The raw product $W$ is not unitary: each link has singular values $1 - O(M^{-2})
 
 **Four-level dynamics.** The atom starts in $D_1(x_0)$ and the full $4\times4$ Hamiltonian is integrated along the loop. The loop parameter follows a smooth ramp $s(u) = u - \sin(2\pi u)/2\pi$, so the lasers start and stop with zero velocity. The result is projected onto the dark basis at $x_0$ and compared with $U c_0$.
 
----
-
 ## 3. Results
 
 ### 3.1 Abelian Berry phase
 
-![berry phase](figures/fig1_berry_phase.png)
+![Discrete Berry phase against cone angle, and its error against the number of points M](figures/fig1_berry_phase.png)
 
 **Figure 1.** (a) Discrete Berry phase at $M = 400$ for the aligned (circles) and anti-aligned (squares) states against cone angle, with $\mp\pi(1-\cos\theta)$ (lines). Crosses repeat the calculation with a random phase on every $u_j$. The anti-aligned phase is the negative of the aligned one; at the south pole the aligned phase reaches $-2\pi \equiv 0$. (b) Error against $M$ (symbols) and the predicted leading term $\tfrac{\pi^3}{3}\sin^2\theta\,|\cos\theta|/M^2$ (lines, no fit). The dotted line marks $M = 400$.
 
@@ -117,7 +135,7 @@ The error is $O(M^{-2})$, and its coefficient matches $\tfrac{\pi^3}{3}\sin^2\th
 
 ### 3.2 Non-adiabatic corrections
 
-![non-adiabatic](figures/fig2_nonadiabatic.png)
+![Deviation of the extracted phase from the Berry phase against precession rate, and the Aharonov–Anandan phase](figures/fig2_nonadiabatic.png)
 
 **Figure 2.** (a) Deviation of the extracted phase $\gamma_{\rm ext}$ from the Berry phase against precession rate. Symbols are the Magnus integration, solid lines the exact rotating-frame result, dashed lines the predicted leading term $\tfrac\pi2\sin^2\theta\;\Omega/\omega_0$. (b) At $\theta = 0.9$: $\gamma_{\rm ext}$ (circles, line exact) and the Aharonov–Anandan phase for a state started on the rotating-frame axis (squares), with $-\pi(1-\cos\theta')$ (orange line). The dashed line is the adiabatic Berry phase.
 
@@ -133,7 +151,7 @@ Panel (b) reframes the "error". The state does not follow the field; it follows 
 
 ### 3.3 Wilson loop versus four-level evolution
 
-![wilson vs evolution](figures/fig3_wilson_vs_evolution.png)
+![Dark-state Bloch vector along the loop from parallel transport and from four-level evolution, and the infidelity against loop time](figures/fig3_wilson_vs_evolution.png)
 
 **Figure 3.** Loop $b$: a circle of radius 1.5 in the $(\varphi, S)$ plane at $\theta = 1.3$. (a) Bloch vector of the dark-subspace state in the local basis $D(x(s))$ along the loop. Lines are the parallel-transport prediction ($M = 2000$), symbols the full four-level evolution with $T\Omega_0 = 200$. (b) Infidelity of the evolved state against the holonomy prediction for a linear and a smooth ramp, with $T^{-2}$ and $T^{-4}$ guides.
 
@@ -149,7 +167,7 @@ The state rotates through most of the Bloch sphere, with no energy difference dr
 
 ### 3.4 Loop order: non-Abelian holonomy
 
-![loop order](figures/fig4_loop_order.png)
+![Dark-state population for loops a-then-b and b-then-a, and the final-state overlap against loop size](figures/fig4_loop_order.png)
 
 **Figure 4.** Loop $a$ circles in $(\theta, \varphi)$ (radius 0.6), loop $b$ in $(\varphi, S)$ (radius 1.5), both from $x_0 = (1.3, 0, 0)$. Every loop keeps $0 < \theta < \pi/2$. (a) $\langle\sigma_z\rangle$ of the dark state, in the fixed basis $D(x_0)$, during the four-level evolution: $a$ then $b$ (blue) and $b$ then $a$ (orange), $T\Omega_0 = 200$ per loop. Symbols are the Wilson-loop predictions after each loop. (b) Overlap of the two final states as both radii are scaled by $\lambda$. Line from Wilson loops, symbols from the four-level evolution. Dashed: control pair with $S$ fixed.
 
@@ -161,9 +179,7 @@ The state rotates through most of the Bloch sphere, with no energy difference dr
 | $\|[U_a, U_b]\|_F$ | $1.770$ | |
 | control (both loops at fixed $S$): $\|[U_a, U_{b'}]\|_F$, overlap | $7.4\times10^{-14}$, $1.000000000000$ | |
 
-Traversing the same two loops in opposite order leaves the atom in states with overlap $0.25$, so they are mostly orthogonal. This is the defining property of a non-Abelian gauge field. The four-level simulation agrees with the Wilson-loop number to $1.5\times10^{-3}$, consistent with its infidelity: an error $1 - F \sim 3\times10^{-6}$ moves amplitudes by $\sim\sqrt{1-F}$. As predicted in [`Berry-phase.pdf`](Berry-phase.pdf) §6, the brief's warning is right: with all couplings real, every $A_\mu$ is a multiple of $\sigma_y$, and the control loops commute to $10^{-13}$. Panel (b) shows the effect is small for small loops. The commutator scales as $[U_a, U_b] \approx -[F_a, F_b]\,\text{area}_a\,\text{area}_b \propto \lambda^4$, so $1 - |\langle\psi_{ab}|\psi_{ba}\rangle| \propto \lambda^8$: from $\lambda = 0.5$ to $0.75$ it grows from $0.0068$ to $0.175$, a factor $25.7$ against $1.5^8 = 25.6$. It becomes order one only when the loops enclose a large curvature flux.
-
----
+Traversing the same two loops in opposite order leaves the atom in states with overlap $0.25$, so they are mostly orthogonal. This is the defining property of a non-Abelian gauge field. The four-level simulation agrees with the Wilson-loop number to $1.5\times10^{-3}$, consistent with its infidelity: an error $1 - F \sim 3\times10^{-6}$ moves amplitudes by $\sim\sqrt{1-F}$. As predicted in [`Berry-phase.pdf`](Berry-phase.pdf) §6, the brief's warning is right: with all couplings real, every $A_\mu$ is a multiple of $\sigma_y$, and the control loops commute to $10^{-13}$. Panel (b) shows the effect is small for small loops. The commutator scales as $[U_a, U_b] \approx -[F_a, F_b]\,\text{area}_a\,\text{area}_b \propto \lambda^4$, so $1 - |\langle\psi_{ab}|\psi_{ba}\rangle| \propto \lambda^8$. From $\lambda = 0.5$ to $0.75$ it grows from $0.0068$ to $0.175$, a factor $25.7$ against $1.5^8 = 25.6$. It becomes order one only when the loops enclose a large curvature flux.
 
 ## 4. Discussion
 
@@ -172,11 +188,12 @@ Traversing the same two loops in opposite order leaves the atom in states with o
 3. **Relation to the Zak phase in the SSH project.** The Zak phase is this calculation with the loop parameter being crystal momentum: $k$ runs over the Brillouin zone, a closed loop because $H(k+2\pi) = H(k)$. [`SSH-model`](../SSH-model/README.md) uses the same discrete formula (`zak_phase`). There chiral symmetry quantises the phase to $0$ or $\pi$; here the solid angle varies continuously with $\theta$.
 4. **Why does a degenerate level give a matrix-valued phase?** Inside a $d$-fold degenerate level, adiabatic transport fixes the subspace but not a basis in it, so the gauge freedom is $U(d)$. Transport around a loop returns the subspace to itself, rotated by a $d\times d$ unitary. Different loops give different unitaries, and in general they do not commute: figs. 3–4.
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 Berry-phase/
 ├── berry_phase/
 │   ├── geometry.py         discrete Berry phase, Wilson loop, holonomy, parallel transport, plaquette flux
@@ -190,15 +207,7 @@ Berry-phase/
 └── Berry-phase.pdf         the project report
 ```
 
-## Running
-
-`berry_phase` is installed as part of the repository's Poetry environment, and pytest is in the `dev` group.
-
-```bash
-poetry install                                        # from the repository root
-poetry run pytest Berry-phase/tests                   # ~1 s
-poetry run python Berry-phase/scripts/make_figures.py # ~6 s
-```
+</details>
 
 ## References
 

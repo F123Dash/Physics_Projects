@@ -1,17 +1,43 @@
-# Interferometric scattering (iSCAT) microscopy signal
+# Interferometric Scattering (iSCAT) Microscopy
+
+*Signal, image and detection limit of iSCAT from first principles.*
+
+<p align="center">
+  <img src="figures/fig4_psf.png" width="760" alt="Vectorial iSCAT contrast image of a 30 nm polystyrene sphere, a dark centre with alternating rings, and its scattered-intensity profiles">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="iSCAT.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
 
 A sub-wavelength particle on a coverslip scatters a field $E_s\propto a^3$. In iSCAT this field interferes with the weak reflection $E_r$ from the glass–water interface, so the camera records $C = 2\,\mathrm{Re}(E_s/E_r) + |E_s/E_r|^2$. This project computes that signal from first principles:
 
-* scattering by Rayleigh and by a Mie series written here, checked against Bohren & Huffman and against `miepython`;
-* the image of the particle in two models, a closed-form scalar one and a vectorial dipole-near-interface one (Fresnel s/p transmission, aplanatic objective, supercritical light);
-* shot-noise-limited images and the detection limit;
-* three extensions beyond the brief: 3D tracking of a diffusing particle from its interference pattern, static speckle from coverslip roughness, and photothermal detection of absorbing particles.
+* Scattering by Rayleigh and by a Mie series written here, checked against Bohren & Huffman and against `miepython`.
+* The image of the particle in two models: a closed-form scalar one and a vectorial dipole-near-interface one (Fresnel s/p transmission, aplanatic objective, supercritical light).
+* Shot-noise-limited images and the detection limit.
+* Three extensions beyond the brief: 3D tracking of a diffusing particle from its interference pattern, static speckle from coverslip roughness, and photothermal detection of absorbing particles.
 
-Along the way it corrects six of the brief's statements and derives the leading error terms (`iSCAT.pdf`).
+Along the way it corrects six of the brief's statements and derives the leading error terms ([`iSCAT.pdf`](iSCAT.pdf)).
 
-$\lambda_0 = 532$ nm, glass $n_1 = 1.52$, water $n_2 = 1.33$ (so $\lambda_m = 400$ nm), objective NA 1.4, polystyrene $n = 1.59$, gold $n = 0.544+2.231i$ (Johnson & Christy 1972, interpolated to 532 nm). All numbers below are copied from [`figures/results.txt`](figures/results.txt).
+The optical setup is $\lambda_0 = 532$ nm, glass $n_1 = 1.52$, water $n_2 = 1.33$ (so $\lambda_m = 400$ nm) and objective NA 1.4. The particles are polystyrene, $n = 1.59$, and gold, $n = 0.544+2.231i$ (Johnson & Christy 1972, interpolated to 532 nm).
 
-## Summary
+> [!NOTE]
+> All numbers below are copied from [`figures/results.txt`](figures/results.txt), which `scripts/make_figures.py` writes. Each row of the summary table names the test that checks it (133 tests in `tests/`).
+
+## Quick start
+
+```bash
+poetry install
+poetry run pytest iSCAT/tests                   # ~18 s
+poetry run python iSCAT/scripts/make_figures.py # ~52 s
+```
+
+Both times were measured on a Ryzen 7 7840HS with Python 3.14.7, NumPy 2.4.6 and SciPy 1.17.1. The script imports `fourier_optics` from [`Fourier-optics/`](../Fourier-optics/README.md) for the Gaussian illumination, and one test uses its propagator.
+
+## Summary of results
 
 | Quantity | Result | Expected | Test |
 |---|---|---|---|
@@ -46,7 +72,7 @@ $\lambda_0 = 532$ nm, glass $n_1 = 1.52$, water $n_2 = 1.33$ (so $\lambda_m = 40
 ### Corrections to the brief
 
 1. **"Mie reproduces $a^6$ within 2% for $a<\lambda/20$."** This holds only if λ is the wavelength *in water*, and then only just: the 2% radius for polystyrene is 19.99 nm, against $\lambda_m/20 = 20.00$ nm. With the vacuum wavelength the error at $\lambda_0/20 = 26.6$ nm is 3.6%. For gold the 2% radius is 5.9 nm.
-2. **"Slopes 3 and 6 for 10–40 nm."** With Rayleigh scattering the slopes are exactly 3 and 6 by construction, so this tests nothing. With Mie, the interference slope is 2.927, close to 3, but the scattering-only slope is 5.855. The miss comes from the backscattering amplitude, which leaves the $a^3$ law faster than $\sigma_{\rm sca}$ does: $C = -0.312$ vs $B = -0.200$, because the magnetic dipole and electric quadrupole add coherently at order $x^2$.
+2. **"Slopes 3 and 6 for 10–40 nm."** With Rayleigh scattering the slopes are exactly 3 and 6 by construction, so this tests nothing. With Mie, the interference slope is 2.927, close to 3, but the scattering-only slope is 5.855. The miss comes from the backscattering amplitude, which leaves the $a^3$ law faster than $\sigma_{\rm sca}$ does: $C = -0.312$ vs $B = -0.200$. The magnetic dipole and electric quadrupole add coherently at order $x^2$.
 3. **"Contrast period in z equals λ/(2n)."** With n = n_water = 1.33, this holds to 1% only at low NA (1.0065 at NA 0.3; not above NA ≈ 0.37). It also holds if the focus follows the particle, or for the signal summed over the whole spot. At the PSF peak with the focus fixed on the coverslip, the scalar model gives exactly $2\lambda_m/(3+\cos\theta_m)$. The vectorial model gives 240 nm at NA 1.4, 20% longer.
 4. **"The sign (π shift) from the reflection."** Seen from the glass, the glass→water reflection has $r = +0.0667$: there is no π shift. The quarter-wave offset that makes particles on the glass look dark is the Gouy phase of the scattered spherical wave. A lossless particle exactly in the focal plane gives *zero* interference contrast.
 5. **"$a_{\min}\propto N^{-1/6}$."** This needs the iSCAT phase to be independent of size. For a particle resting on the glass, with the focus on the interface, the phase is $\pi/2 + k(3+c)a/2$, so the contrast goes as $a^4$ and $a_{\min}\propto N^{-1/8}$ (scalar model; −0.122 vectorial). Moving the focus about 200 nm into the sample restores $-1/6$, and makes small particles 14× brighter.
@@ -80,7 +106,7 @@ The two FFT errors oscillate rather than fall monotonically, so the table quotes
 
 ## Model
 
-**Geometry and conventions** (`iSCAT.pdf` §0). Time dependence is $e^{-i\omega t}$. The geometry:
+**Geometry and conventions** ([`iSCAT.pdf`](iSCAT.pdf) §0). Time dependence is $e^{-i\omega t}$. The geometry:
 
 * An $x$-polarised plane wave $E_0 = 1$ comes from the glass.
 * The reference is its reflection $r = (n_1-n_2)/(n_1+n_2)$.
@@ -105,19 +131,19 @@ The two FFT errors oscillate rather than fall monotonically, so the table quotes
 ### Mie series
 The BHMIE recurrences: $D_n(mx)$ downward from $n_{\max}+16$, which is stable for absorbing spheres, and $\psi_n$, $\xi_n$ upward, truncated at Wiscombe's $n_{\max} = x + 4.05x^{1/3}+2$. Checks:
 
-* BH appendix listing;
-* `miepython` for four indices and $x$ = 0.05–25 (`miepython` uses $n - i\kappa$, so its index is conjugated);
-* $Q_{\rm ext} = Q_{\rm sca}$ for real $m$;
-* the optical theorem $Q_{\rm ext} = 4\,\mathrm{Re}S(0)/x^2$;
-* the extinction paradox $Q_{\rm ext}\to2$;
-* convergence in $n_{\max}$.
+* The BH appendix listing.
+* `miepython` for four indices and $x$ = 0.05–25 (`miepython` uses $n - i\kappa$, so its index is conjugated).
+* $Q_{\rm ext} = Q_{\rm sca}$ for real $m$.
+* The optical theorem $Q_{\rm ext} = 4\,\mathrm{Re}S(0)/x^2$.
+* The extinction paradox $Q_{\rm ext}\to2$.
+* Convergence in $n_{\max}$.
 
 The leading departures from Rayleigh, (M3) and (M4), are checked at $x$ = 0.02–0.04 with error $O(x^2)$.
 
 ### Scalar image
 This is (S2): the angular spectrum of the dipole, transmitted with $t t'$, band-limited at $\min(\mathrm{NA}, n_2)$ and propagated to the focal plane. Writing it in $u = k_z$ removes the $1/k_z$ singularity, and the centre value has the closed form (S3). The quadrature matches the closed form to 1e-12.
 
-The defocused image was also rebuilt independently on an FFT grid. Starting from the in-focus band-limited image, I propagated it with the **Project 5 angular-spectrum propagator** (`fourier_optics.propagate`); the two agree to 6e-3. The residual comes from counting lattice points inside the pupil disk and falls as the grid grows (`test_scalar_defocus_matches_fourier_optics_propagator`). The simulated image in Figure 5 uses the Project 5 Gaussian beam as the illumination.
+The defocused image was also rebuilt independently on an FFT grid. Starting from the in-focus band-limited image, I propagated it with the **angular-spectrum propagator of [Fourier-optics](../Fourier-optics/README.md)** (`fourier_optics.propagate`); the two agree to 6e-3. The residual comes from counting lattice points inside the pupil disk and falls as the grid grows (`test_scalar_defocus_matches_fourier_optics_propagator`). The simulated image in Figure 5 uses the Fourier-optics Gaussian beam as the illumination.
 
 ### Vectorial image (Level 2)
 This is (V3), a Richards–Wolf-type integral for an $x$ dipole above the interface. The $\kappa$ integral is split at $\kappa = k_2$ into smooth pieces ($\kappa = k_2\sin\theta_2$, then $k_2\cosh u$). With 300 Gauss–Legendre nodes per piece it converges to 1e-10. Checks:
@@ -143,7 +169,7 @@ The temperature (H1) and the lens polarizability (H2) are closed forms, each che
 
 ### Figure 1: Mie vs Rayleigh
 
-![Mie vs Rayleigh](figures/fig1_mie.png)
+![Rayleigh and Mie scattering efficiencies, and their ratio for the scattered power and the backscattered amplitude](figures/fig1_mie.png)
 
 **Figure 1.** (a) Scattering efficiency: Rayleigh (lines) and Mie (symbols). (b) Mie/Rayleigh ratio for $\sigma_{\rm sca}$ (circles) and for the backscattered amplitude that iSCAT measures (squares), with the derived leading terms $1+Bx^2$ (dashed) and $|1+Cx^2|$ (dotted). Vertical lines mark $\lambda_m/20$ and $\lambda_0/20$.
 
@@ -156,7 +182,7 @@ For polystyrene the $x^2$ law predicts the 10% radius as 45.0 nm, 3% from the tr
 
 ### Figure 2: contrast vs radius
 
-![contrast vs radius](figures/fig2_radius.png)
+![Interference and scattering terms of the contrast against particle radius](figures/fig2_radius.png)
 
 **Figure 2.** Interference term $2|s/r|$ and scattering term $|s/r|^2$ at the PSF centre ($h$ = 20 nm, focus on the interface, NA 1.4), for Rayleigh (lines) and Mie (symbols). The brief's fit range, 10–40 nm, is shaded.
 
@@ -169,7 +195,7 @@ For polystyrene the interference term dominates up to about 150 nm. The backscat
 
 ### Figure 3: contrast vs height
 
-![contrast vs height](figures/fig3_height.png)
+![Centre contrast against particle height, and the fringe period against NA](figures/fig3_height.png)
 
 **Figure 3.** (a) Centre contrast vs particle height for 20 nm particles, normalised, with NA 1.4 and the focus on the interface. The dashed line is the scalar model with NA clipped to $n_2$. (b) Fringe period, in units of $\lambda_0/2n_{\rm water} = 200$ nm. Circles: vectorial peak, fitted over $h$ = 20–220 nm. Line: scalar $4/(3+\cos\theta_m)$. Diamonds: signal summed over a Gaussian window $W$ = 3 µm.
 
@@ -186,7 +212,7 @@ The polarizability phase of gold, $\arg\alpha_{\rm Au}/\alpha_{\rm PS}$ = 0.958 
 
 ### Figure 4: the iSCAT point-spread function
 
-![PSF](figures/fig4_psf.png)
+![Vectorial iSCAT contrast image of a 30 nm sphere and its intensity profiles](figures/fig4_psf.png)
 
 **Figure 4.** (a) Vectorial iSCAT contrast image of a 30 nm polystyrene sphere on the glass at the best focus ($z_f$ = 140 nm), peak $C = -0.201$. (b) Scattered intensity profiles $|E_s|^2$ at $z_f = 0$.
 
@@ -201,9 +227,9 @@ The vectorial spot is elongated along the polarisation by a factor of 1.23. The 
 
 ### Figure 5: simulated image and its statistics
 
-![image](figures/fig5_image.png)
+![One simulated shot-noise contrast image, and contrast statistics over 2000 images](figures/fig5_image.png)
 
-**Figure 5.** (a) One simulated contrast image. A 15 nm polystyrene particle sits at (600, −300) nm under a Gaussian beam ($w_0$ = 4 µm, Project 5), with $N = 10^5$ photons/pixel and one background frame. (b) Over 2000 images of a centred particle: the centre-pixel contrast (grey) and the PSF-fit amplitude (blue), with the predicted Gaussians (dashed).
+**Figure 5.** (a) One simulated contrast image. A 15 nm polystyrene particle sits at (600, −300) nm under a Gaussian beam ($w_0$ = 4 µm, from Fourier-optics), with $N = 10^5$ photons/pixel and one background frame. (b) Over 2000 images of a centred particle: the centre-pixel contrast (grey) and the PSF-fit amplitude (blue), with the predicted Gaussians (dashed).
 
 | | mean | standard deviation |
 |---|---|---|
@@ -219,7 +245,7 @@ Peak contrast and noise match the prediction: every number is within 1σ of its 
 
 ### Figure 6: detection limit
 
-![detection](figures/fig6_detection.png)
+![Smallest detectable radius against photons per pixel, and smallest detectable protein mass](figures/fig6_detection.png)
 
 **Figure 6.** (a) Smallest detectable radius (3σ) vs photons per pixel at the best focus, for one pixel (open) and a PSF fit (filled). Lines are $N^{-1/6}$. (b) Smallest detectable protein mass, from the $dn/dc$ polarizability, at $h$ = 3 nm and the best focus.
 
@@ -242,7 +268,7 @@ Detecting a 66 kDa protein at 3σ with a PSF fit needs $4.6\times10^7$ photons p
 
 ### Figure 7: choosing the focus and the reference strength
 
-![focus and reference](figures/fig7_focus_reference.png)
+![Interference term against focal-plane position, and SNR against reference attenuation](figures/fig7_focus_reference.png)
 
 **Figure 7.** (a) Interference term vs focal-plane position for dipoles at three heights. (b) Single-pixel SNR vs reference attenuation for a fixed scattered field $s = -2\times10^{-4}$. Blue: fixed illumination. Orange: fixed detected counts per pixel. Lines are the exact (N2).
 
@@ -257,7 +283,7 @@ Figures 8–10 go beyond the brief. Each has its own tests (`test_isc_tracking.p
 
 ### Figure 8: 3D tracking from the interference pattern
 
-![tracking](figures/fig8_tracking.png)
+![Cramér–Rao bounds against particle height, and the MSD of a tracked diffusing particle](figures/fig8_tracking.png)
 
 **(a)** Cramér–Rao bounds (T1) for a gold particle of radius 10 nm imaged with $N = 10^4$ photons per pixel on 15 × 15 pixels, with the focus on the interface. The fitted parameters are $(x_0, y_0, h)$ and the amplitude $s$. **(b)** A particle diffusing freely in 3D ($D$ = 0.5 µm²/s, 50 kHz frames), localised frame by frame. The MSD of the tracked positions sits $2\sigma^2$ above that of the true track (T3). The error bars are the expected scatter of each MSD point, taken from 500 simulated tracks of the same length.
 
@@ -269,7 +295,7 @@ Figures 8–10 go beyond the brief. Each has its own tests (`test_isc_tracking.p
 
 The precision swaps between the axes with the fringe (T2). At a zero crossing of the centre contrast, the phase of $E_s/E_r$ passes through quadrature, so the intensity changes fastest with $h$. The same spot then has almost no contrast to locate laterally. The minimum of $\sigma_z$ (86 nm) and the maximum of $\sigma_x$ (94 nm) both lie within 10 nm of the crossing at 91.6 nm. At the extremum, $h$ and the amplitude both deepen the dark spot, so they are correlated; knowing the amplitude halves $\sigma_z$ there.
 
-At $h$ = 60 nm the weighted least-squares fit is unbiased and its spread equals the bound for all four parameters: 200 fits give 3.49, 2.28, 1.44 nm against 3.25, 2.14, 1.47 nm, with a 5% standard error on each spread (also `test_fit_reaches_cramer_rao_bound`). Near the extremum at $N = 10^4$ the fit is not yet efficient, because the strong $h$–$s$ correlation flattens the likelihood. There $\sigma_z$ = 8.50 nm against a bound of 7.47 nm (+14%), with a bias in $h$ of −1.17 ± 0.60 nm.
+At $h$ = 60 nm the weighted least-squares fit is unbiased and its spread equals the bound for all four parameters. 200 fits give 3.49, 2.28, 1.44 nm against 3.25, 2.14, 1.47 nm, with a 5% standard error on each spread (also `test_fit_reaches_cramer_rao_bound`). Near the extremum at $N = 10^4$ the fit is not yet efficient, because the strong $h$–$s$ correlation flattens the likelihood. There $\sigma_z$ = 8.50 nm against a bound of 7.47 nm (+14%), with a bias in $h$ of −1.17 ± 0.60 nm.
 
 The height is known only modulo the fringe period. A fit started 240 nm too high settles at $h$ = 280 nm, but with $\chi^2$ = 746 against 232 at the true fringe (225 pixels). At NA 1.4 the PSF changes shape over one period, and that breaks the ambiguity.
 
@@ -286,9 +312,9 @@ Approximations: point-sampled pixels, instantaneous frames (no motion blur), and
 
 ### Figure 9: speckle from coverslip roughness
 
-![roughness](figures/fig9_roughness.png)
+![Speckle from coverslip roughness around a particle, its removal by a particle-free frame, and speckle rms against correlation length](figures/fig9_roughness.png)
 
-**(a)** A polystyrene particle ($a$ = 12 nm, peak contrast $-1.19\times10^{-2}$) on glass with rms roughness $\sigma_\zeta$ = 0.3 nm and correlation length $\ell$ = 20 nm (assumed typical AFM values), imaged at the particle's best focus $z_f$ = 215 nm. The speckle rms, $3.1\times10^{-3}$, is a quarter of the particle's contrast. **(b)** The same image divided by a particle-free frame of the same surface. It differs from the smooth-glass image by at most $1.9\times10^{-5}$. **(c)** Speckle contrast rms against $\ell$: lines are the spectral integral (R4), circles are the mean of three 41 µm Monte Carlo maps, with standard-error bars (smaller than the symbols). At all eight points they agree within 1.8 standard errors.
+**(a)** A polystyrene particle ($a$ = 12 nm, peak contrast $-1.19\times10^{-2}$) on glass with rms roughness $\sigma_\zeta$ = 0.3 nm and correlation length $\ell$ = 20 nm (assumed typical AFM values). It is imaged at the particle's best focus $z_f$ = 215 nm. The speckle rms, $3.1\times10^{-3}$, is a quarter of the particle's contrast. **(b)** The same image divided by a particle-free frame of the same surface. It differs from the smooth-glass image by at most $1.9\times10^{-5}$. **(c)** Speckle contrast rms against $\ell$: lines are the spectral integral (R4), circles are the mean of three 41 µm Monte Carlo maps, with standard-error bars (smaller than the symbols). At all eight points they agree within 1.8 standard errors.
 
 The roughness is modelled to first order as a sheet of polarizability $(m^2-1)\zeta$ at the interface, imaged with the vectorial transfer function (R1–R2). A uniform step reproduces the shifted-interface Fresnel phase exactly (R3), and a single raised pixel reproduces the dipole PSF.
 
@@ -309,7 +335,7 @@ The static speckle cancels in a ratio to a particle-free frame of the same field
 
 ### Figure 10: photothermal detection of absorbers
 
-![photothermal](figures/fig10_photothermal.png)
+![Thermal-lens polarizability against modulation frequency, and gold detection limits with and without photothermal readout](figures/fig10_photothermal.png)
 
 **(a)** Lens polarizability against pump modulation frequency for gold $a$ = 10 nm (H2), normalised to the steady reflection value. **(b)** Smallest detectable gold radius against probe photons per pixel. Three cases are compared: iSCAT with shot noise only, iSCAT with the Fig. 9 speckle, and photothermal readout at 100 kHz with two pump intensities.
 
@@ -333,13 +359,23 @@ Approximations: the glass is treated as water for heat flow, and gold's own $d\v
 2. **What sets the optimal reference strength?** Shot noise alone does not (Fig. 7b, blue). What matters is how many photons you can detect: a weaker reference lets more illumination fit in the full well, so the SNR grows as $1/|r|$ (orange). The limits are photodamage, a reference that no longer dominates read noise and stray light ($|r|^2N$ must stay well above read noise), and the $|s|^2$ term once $|r|\sim|s|$.
 3. **Why does the contrast change sign with height?** The phase of $E_s/E_r$ is $\pi/2$ (Gouy) $+ \arg\alpha + (k_2 + \langle k_z\rangle)h$ (Fig. 3). The period is $\lambda_m/2$ only for paraxial collection; at NA 1.4 with a fixed focus it is 240 nm. Moving the focus adds its own phase, which is why the best focus depends on height (Fig. 7a).
 4. **What is the fundamental noise limit?** Photon shot noise, $\sigma_C = 1/\sqrt N$ per pixel and $1/\sqrt{N\sum T^2}$ for the PSF fit (Fig. 5). Reaching it needs:
-   * frame averaging up to the stability of the setup;
-   * a fresh background estimate (ratiometric imaging, which costs √2 here);
-   * suppression of speckle from the coverslip roughness, which in experiments often sets the floor before shot noise does. With $\sigma_\zeta$ = 0.3 nm the floor is 10 nm for polystyrene at any $N$ (Fig. 9), unless a particle-free frame of the same field is divided out.
+   * Frame averaging up to the stability of the setup.
+   * A fresh background estimate (ratiometric imaging, which costs √2 here).
+   * Suppression of speckle from the coverslip roughness, which in experiments often sets the floor before shot noise does. With $\sigma_\zeta$ = 0.3 nm the floor is 10 nm for polystyrene at any $N$ (Fig. 9), unless a particle-free frame of the same field is divided out.
 
-## Layout
+## What I would ask
 
-```
+* Should the reference include the objective's angular collection (a focused, not collimated, illumination)? In a scanning (confocal) iSCAT, $|E_r|$ depends on NA.
+* Should the substrate be a stratified coverslip, for example with a thin dielectric layer, as in later interferometric-reflectance designs? (V2) would then become a multilayer transfer matrix.
+* For the mass-photometry numbers, which $dn/dc$ and height should be used for a membrane protein or a nucleic acid?
+* What does the coverslip's AFM roughness spectrum look like? Fig. 9c shows that the correlation length matters as much as the rms height, and the Gaussian spectrum used here is an assumption.
+
+## Project layout
+
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 iSCAT/
 ├── iscat/
 │   ├── scattering.py   # Rayleigh, Mie (BHMIE), x^2 coefficients, protein polarizability
@@ -356,22 +392,7 @@ iSCAT/
 └── iSCAT.pdf           # the project report
 ```
 
-## Running
-
-```bash
-poetry install
-poetry run pytest iSCAT/tests                   # ~18 s
-poetry run python iSCAT/scripts/make_figures.py # ~52 s
-```
-
-Both times were measured on a Ryzen 7 7840HS with Python 3.14.7, NumPy 2.4.6 and SciPy 1.17.1. The script imports `fourier_optics` from `Fourier-optics/` (Project 5) for the Gaussian illumination, and one test uses its propagator.
-
-## What I would ask
-
-* Should the reference include the objective's angular collection (a focused, not collimated, illumination)? In a scanning (confocal) iSCAT, $|E_r|$ depends on NA.
-* Should the substrate be a stratified coverslip, for example with a thin dielectric layer, as in later interferometric-reflectance designs? (V2) would then become a multilayer transfer matrix.
-* For the mass-photometry numbers, which $dn/dc$ and height should be used for a membrane protein or a nucleic acid?
-* What does the coverslip's AFM roughness spectrum look like? Fig. 9c shows that the correlation length matters as much as the rms height, and the Gaussian spectrum used here is an assumption.
+</details>
 
 ## References
 

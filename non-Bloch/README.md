@@ -1,11 +1,33 @@
 # Non-Bloch Band Theory
-### Generalised Brillouin zone, non-Bloch winding number, and how far the open spectrum sits from E(GBZ)
 
-Bloch's theorem fails for chains with a non-Hermitian skin effect: the open-chain eigenstates grow or decay as $\beta^n$ with $|\beta| \neq 1$, and the periodic spectrum has little to do with the open one. Non-Bloch band theory (Yao and Wang 2018, Yokomizo and Murakami 2019) replaces the Brillouin zone $|\beta| = 1$ by the generalised Brillouin zone (GBZ), the curve on which the open-chain continuum lives. This project computes the GBZ with one root-finding code for three chains: Hatano–Nelson, the non-reciprocal SSH chain of the previous project, and a single-band chain with second-neighbour hopping whose GBZ is not a circle. It checks that the non-Bloch winding number counts the open-chain edge states where the Bloch winding does not. It also derives and verifies the leading finite-size term: how far the eigenvalues of an $N$-site chain sit from $E(\mathrm{GBZ})$, with no fitted parameter.
+*Generalised Brillouin zone, non-Bloch winding number, and how far the open spectrum sits from E(GBZ).*
 
-Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (56 tests in `tests/`). Derivations and the full report are in [`non-Bloch.pdf`](non-Bloch.pdf).
+<p align="center">
+  <img src="figures/fig4_range2.png" width="760" alt="A non-circular generalised Brillouin zone with three cusps, and the open-chain eigenvalues lying on E(GBZ) inside the periodic spectrum">
+</p>
 
----
+<p align="center">
+  <a href="#quick-start">Quick start</a> •
+  <a href="#summary-of-results">Results</a> •
+  <a href="non-Bloch.pdf">Report (PDF)</a> •
+  <a href="#references">References</a>
+</p>
+
+Bloch's theorem fails for chains with a non-Hermitian skin effect: the open-chain eigenstates grow or decay as $\beta^n$ with $|\beta| \neq 1$, and the periodic spectrum has little to do with the open one. Non-Bloch band theory (Yao and Wang 2018, Yokomizo and Murakami 2019) replaces the Brillouin zone $|\beta| = 1$ by the generalised Brillouin zone (GBZ), the curve on which the open-chain continuum lives. This project computes the GBZ with one root-finding code for three chains: Hatano–Nelson, the non-reciprocal SSH chain of the [previous project](../nh-SSH/README.md), and a single-band chain with second-neighbour hopping whose GBZ is not a circle. It checks that the non-Bloch winding number counts the open-chain edge states where the Bloch winding does not. It also derives and verifies the leading finite-size term: how far the eigenvalues of an $N$-site chain sit from $E(\mathrm{GBZ})$, with no fitted parameter.
+
+> [!NOTE]
+> Every number on this page is produced by `scripts/make_figures.py` and saved in [`figures/results.txt`](figures/results.txt). Every row of the summary table is checked by the named test (56 tests in `tests/`). Derivations and the full report are in [`non-Bloch.pdf`](non-Bloch.pdf).
+
+## Quick start
+
+```bash
+poetry install                                           # from the repository root
+poetry run pytest non-Bloch/tests                        # ~7 s
+poetry run python non-Bloch/scripts/make_figures.py      # ~65 s on 16 cores the first time, ~30 s with the mpmath cache
+poetry run python non-Bloch/scripts/make_figures.py --skip-mpmath
+```
+
+Runtimes measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). The 40-digit mpmath references take ~36 s and are cached in `figures/mpmath_ref.npz` (git-ignored). Two runs of the script give identical `results.txt` files.
 
 ## Summary of results
 
@@ -17,7 +39,7 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 | NH-SSH: roots at the bulk open-chain eigenvalues ($E$-scan), $N = 40$ | $\|\beta_{1,2}\| = r$ to $\le 10^{-15}$ | $r$ | `test_nh_ssh_scan_of_open_eigenvalues` |
 | $\nu_\text{non-Bloch}$ vs zero-mode pairs of the open chain ($N = 200$), 1001 values of $t_1$ at $\gamma = 4/3, 3$ | equal everywhere except 37 points within 0.072 of a transition | equal | `test_nonbloch_winding_counts_edge_states` |
 | $\nu_\text{Bloch}$ at the same points | $1/2$ between the Bloch gap closings; differs from $\nu_\text{non-Bloch}$ at 665 points | | same test |
-| $\gamma = 0$ | GBZ $= $ unit circle, $\nu = $ project-1 winding | same | `test_hermitian_limit_reduces_to_project_1` |
+| $\gamma = 0$ | GBZ $= $ unit circle, $\nu = $ SSH-model winding | same | `test_hermitian_limit_reduces_to_project_1` |
 | Range-2 chain, $(t_{-2}, t_{-1}, t_1, t_2) = (0.3, 1, 0.5, 0.4)$: max/min $\|\beta\|$ on the GBZ | $1.2786/1.0719 = 1.193$ | $> 1$ (not a circle) | `test_range2_gbz_is_not_a_circle` |
 | Range-2, $N = 80$: max distance of open eigenvalues to $E(\mathrm{GBZ})$ | $2.0\times10^{-3}$ (to $E(\text{unit circle})$: $0.44$) | $\to 0$ | `test_range2_open_spectrum_converges_as_1_over_N` |
 | Exponent of the max root gap vs $N$, $N \ge 40$ | $-0.980$ | $-1$ | same test |
@@ -25,7 +47,9 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 | $t_2$ scan: GBZ circular only at | $t_2 = 0.075$, max/min $= 1.000000000000$ | $t_{-2}(t_1/t_{-1})^2 = 0.075$ | `test_circular_negative_control` |
 | `eig` error vs 40-digit mpmath, $N = 100$ | plain $2.7\times10^{-7}$; gauged $\le 10^{-13}$ | | `test_gauged_eig_matches_mpmath`, `test_plain_eig_drifts_at_N_100` |
 
-**Corrections to the brief** (details in the sections below):
+### Corrections to the brief
+
+Details are in the sections below.
 
 1. The non-Bloch winding is $\nu = 1$ for $|t_1^2 - \gamma^2/4| < t_2^2$, with an absolute value. The brief's $t_1^2 - \gamma^2/4 < t_2^2$ misses the second transition at $t_1 = \sqrt{\gamma^2/4 - t_2^2}$ for $\gamma > 2t_2$. At $\gamma = 3$, $t_1 = 0.9$ it predicts $\nu = 1$, but $\nu = 0$ and the open chain has no zero modes (§3.3).
 2. The Bloch winding in the mismatch region is not a wrong integer, it is $1/2$. Exactly one of $h_1, h_2$ has its zero on the wrong side of the unit circle (§3.3).
@@ -33,8 +57,6 @@ Every number on this page is produced by `scripts/make_figures.py` and saved in 
 4. The quoted decay factor $0.159$ vs $0.156$ is right, but only at $N = 12$. At $N = 20$ the fit gives $0.1575$; the exact GBZ radius is $0.15617$. The gap is the boundary shape of the standing waves.
 5. For one band no resultant is needed. $E$ is an explicit function of $\beta$, so the θ-scan equation is just $E(\beta) = E(\beta e^{i\theta})$. The two-band chiral chain reduces to the same form in $\lambda = E^2$.
 6. "$N \le 20$" is more cautious than needed here. Plain `eig` stays below $10^{-10}$ up to $N = 60$ for the range-2 chain. After a diagonal gauge transform to the GBZ's mean radius it is accurate to $\le 10^{-13}$ at $N = 100$ against mpmath (§3.7).
-
----
 
 ## 1. Models and conventions
 
@@ -52,9 +74,7 @@ and $\beta^p\,[E(\beta) - E]$ is a polynomial with $p+q$ roots, sorted as $|\bet
 | Range-2 chain | $t_{-2}\beta^{-2} + t_{-1}\beta^{-1} + t_1\beta + t_2\beta^2$ | 2, 2 |
 | NH-SSH, in $\lambda = E^2$ | $h_1 h_2 = t_2(t_1-\tfrac\gamma2)\beta^{-1} + (t_1^2 - \tfrac{\gamma^2}{4} + t_2^2) + t_2(t_1+\tfrac\gamma2)\beta$ | 1, 1 |
 
-The non-reciprocal SSH chain is the one from the previous project, $H_{AB}(\beta) = h_1 = t_1 + \gamma/2 + t_2/\beta$ and $H_{BA}(\beta) = h_2 = t_1 - \gamma/2 + t_2\beta$, with $\gamma = 4/3$ and $t_2 = 1$ unless stated. Because $\det[H(\beta) - E] = E^2 - h_1h_2$, the two-band chiral problem is a one-band problem in $\lambda = E^2$, and the same GBZ code applies. `test_ssh_lambda_is_h1_h2_and_matches_project_3` ties this to `nh_ssh.bloch_energies`.
-
----
+The non-reciprocal SSH chain is the one from the [previous project](../nh-SSH/README.md): $H_{AB}(\beta) = h_1 = t_1 + \gamma/2 + t_2/\beta$ and $H_{BA}(\beta) = h_2 = t_1 - \gamma/2 + t_2\beta$. Unless stated, $\gamma = 4/3$ and $t_2 = 1$. Because $\det[H(\beta) - E] = E^2 - h_1h_2$, the two-band chiral problem is a one-band problem in $\lambda = E^2$, and the same GBZ code applies. `test_ssh_lambda_is_h1_h2_and_matches_project_3` ties this to `nh_ssh.bloch_energies`.
 
 ## 2. Method
 
@@ -88,13 +108,11 @@ where $C(E)$ is a ratio of small minors built from the roots at $E$ (`boundary_l
 
 $D = \mathrm{diag}(\rho^n)$ maps $t_k \to t_k\rho^k$, i.e. $E(\beta) \to E(\rho\beta)$. It leaves the eigenvalues unchanged and divides the GBZ by $\rho$. For a circular GBZ, $\rho = r$ removes the skin effect entirely (this is the similarity map of the previous project). For the range-2 chain, $\rho = \sqrt{\min|\beta|\max|\beta|} = 1.1707$ removes everything except the non-circular part. `H_obc(N, chain, rho)` builds the gauged matrix. The gauged eigenvalues are checked against 40-digit `mpmath.eig` at $N = 40, 60, 80, 100$ and against a second gauge $1.03\rho$ at every $N$.
 
----
-
 ## 3. Results
 
 ### 3.1 Hatano–Nelson
 
-![hatano-nelson](figures/fig1_hatano_nelson.png)
+![Hatano–Nelson spectra on the unit circle and on the GBZ circle, and right eigenvectors growing towards the right end](figures/fig1_hatano_nelson.png)
 
 **Figure 1.** $t_R = 1.5$, $t_L = 0.5$. (a) The periodic spectrum $E(|\beta| = 1)$ is an ellipse (grey). $E$ on the GBZ circle $|\beta| = \sqrt3$ collapses onto the segment $[-2\sqrt{t_Rt_L}, 2\sqrt{t_Rt_L}]$ (orange), and the 30 open-chain eigenvalues lie on it. (b) $|\psi_n|^2$ of all 20 right eigenvectors of a 20-site open chain. All of them grow towards the right end as $r^{2n}$ (dashed).
 
@@ -102,7 +120,7 @@ The θ-scan gives the radius $\sqrt{t_R/t_L}$ to $\le 2\times10^{-15}$ for $(t_R
 
 ### 3.2 Non-reciprocal SSH chain
 
-![ssh-gbz](figures/fig2_ssh_gbz.png)
+![Non-reciprocal SSH spectrum on its GBZ, and the GBZ radius against t1](figures/fig2_ssh_gbz.png)
 
 **Figure 2.** (a) $t_1 = 0.7$, $\gamma = 4/3$. Grey: periodic spectrum, a closed loop. Orange: $E = \pm\sqrt{\lambda(\beta)}$ on the GBZ, two real segments. Circles: exact open spectrum ($N = 16$), on the segments, plus the zero-mode pair at the origin. (b) GBZ radius against $t_1$. Line: $\sqrt{|t_1-\gamma/2|/|t_1+\gamma/2|}$. Circles: θ-scan. Triangles: decay per cell of the bulk right eigenvectors, from `nh_ssh.skin_decay_factor`. At the exceptional point $t_1 = \gamma/2$ the GBZ shrinks to $\beta = 0$.
 
@@ -116,7 +134,7 @@ On the circle, $\lambda(re^{i\varphi}) = |v' + t_2e^{i\varphi}|^2$ with $v' = \s
 
 ### 3.3 Bloch vs non-Bloch winding
 
-![winding](figures/fig3_winding.png)
+![Bloch and non-Bloch winding numbers against t1 with the open-chain zero-mode count](figures/fig3_winding.png)
 
 **Figure 3.** Winding numbers against $t_1$. Grey: Bloch ($|\beta| = 1$). Orange: non-Bloch (GBZ). Circles: number of zero-mode pairs of the open chain, $N = 200$. Dashed: OBC transitions $|t_1^2 - \gamma^2/4| = t_2^2$. Dotted: Bloch gap closings. (a) $\gamma = 4/3$. (b) $\gamma = 3$, two OBC transitions.
 
@@ -137,7 +155,7 @@ Counting zeros explains it. $h_2$ has a zero at $|\beta| = |t_1-\gamma/2|/t_2$, 
 
 ### 3.4 A non-circular GBZ
 
-![range2](figures/fig4_range2.png)
+![Non-circular GBZ of the range-2 chain and its periodic, GBZ and open spectra](figures/fig4_range2.png)
 
 **Figure 4.** $(t_{-2}, t_{-1}, t_1, t_2) = (0.3, 1, 0.5, 0.4)$. (a) GBZ in the $\beta$-plane (orange), between the circles $|\beta| = 1.0719$ and $1.2786$ (dashed). Dotted: Brillouin zone. (b) Periodic spectrum (grey), $E(\mathrm{GBZ})$ (orange) and the open chain at $N = 80$ (blue, gauged `eig`, §3.7).
 
@@ -145,9 +163,9 @@ The GBZ is not a circle: $|\beta|$ varies by a factor of $1.193$ along it. It ha
 
 ### 3.5 How fast the open spectrum reaches E(GBZ)
 
-![finite size](figures/fig5_finite_size.png)
+![Finite-size root gap of the open eigenvalues against N, with the boundary-term prediction](figures/fig5_finite_size.png)
 
-**Figure 5.** (a) Largest root gap $\ln|\beta_3/\beta_2|$ of the open eigenvalues against $N$ (circles, eigenvalues with $Nd > 3$), the prediction $\max\ln|C(E)|/(N+1)$ (line), the largest distance in the $E$-plane to $E(\mathrm{GBZ})$ (squares), and the largest root gap over all eigenvalues (crosses). (b) $|(N+1)\cdot\text{gap} - \ln|C(E)||$ for every eigenvalue against $Nd$, at $N = 20, 40, 80$. Dashed: $2e^{-Nd}$.
+**Figure 5.** (a) Largest root gap $\ln|\beta_3/\beta_2|$ of the open eigenvalues against $N$ (circles, eigenvalues with $Nd > 3$). Also shown: the prediction $\max\ln|C(E)|/(N+1)$ (line), the largest distance in the $E$-plane to $E(\mathrm{GBZ})$ (squares), and the largest root gap over all eigenvalues (crosses). (b) $|(N+1)\cdot\text{gap} - \ln|C(E)||$ for every eigenvalue against $Nd$, at $N = 20, 40, 80$. Dashed: $2e^{-Nd}$.
 
 | $N$ | eigenvalues with $Nd > 3$ | max gap | $\max\ln\|C\|/(N+1)$ | max $E$-distance |
 |---|---|---|---|---|
@@ -162,7 +180,7 @@ The brief asks for agreement "within finite-size error that shrinks with $N$". T
 
 ### 3.6 Deforming the GBZ
 
-![deformation](figures/fig6_deformation.png)
+![GBZ shapes for five values of t2 and max/min |beta| against t2](figures/fig6_deformation.png)
 
 **Figure 6.** $t_{-2} = 0.3$, $t_{-1} = 1$, $t_1 = 0.5$, varying $t_2$. (a) GBZ for five values of $t_2$. At $t_2 = 0$ the chain has $q = 1$ and three roots. (b) max/min $|\beta|$ along the GBZ against $t_2$, from 52 θ-scans. Dashed: predicted circular point.
 
@@ -176,7 +194,7 @@ Below $t_2 = 0.075$ the GBZ develops inward kinks on the left (the $t_2 = 0$ cur
 
 ### 3.7 Numerical accuracy
 
-![accuracy](figures/fig7_accuracy.png)
+![Plain and gauged eig errors against N, with mpmath references](figures/fig7_accuracy.png)
 
 **Figure 7.** (a) Grey: largest distance between plain `eig` and the gauged eigenvalues ($\rho = 1.171$). Blue: gauge $1.03\rho$ against gauge $\rho$, a consistency check of the gauged result. Stars: both against 40-digit mpmath. (b) $N = 160$: plain `eig` (grey crosses) scatters off $E(\mathrm{GBZ})$ near the junction, while the gauged eigenvalues (blue) stay on it.
 
@@ -188,9 +206,7 @@ Below $t_2 = 0.075$ the GBZ develops inward kinks on the left (the $t_2 = 0$ cur
 | 100 | $2.7\times10^{-7}$ | $7.5\times10^{-14}$ | $1.2\times10^{-13}$ |
 | 160 | | | $2.6\times10^{-10}$ |
 
-Plain `eig` passes $10^{-10}$ at $N = 65$ and reaches $0.04$ by $N = 160$. With the gauge, the error against mpmath is $\le 10^{-13}$ up to $N = 100$; beyond that, the two gauges agree to $10^{-12}$ up to $N = 120$ and first differ by more than $10^{-10}$ at $N = 160$. That limit is set by the non-circular part of the GBZ, which no diagonal gauge can remove. Unlike the NH-SSH chain of the previous project, I see no step at the 75-site LAPACK crossover here: the plain error grows smoothly. All finite-size results in §3.5 use the gauged matrix at $N \le 160$.
-
----
+Plain `eig` passes $10^{-10}$ at $N = 65$ and reaches $0.04$ by $N = 160$. With the gauge, the error against mpmath is $\le 10^{-13}$ up to $N = 100$. Beyond that, the two gauges agree to $10^{-12}$ up to $N = 120$ and first differ by more than $10^{-10}$ at $N = 160$. That limit is set by the non-circular part of the GBZ, which no diagonal gauge can remove. Unlike the NH-SSH chain of the previous project, I see no step at the 75-site LAPACK crossover here: the plain error grows smoothly. All finite-size results in §3.5 use the gauged matrix at $N \le 160$.
 
 ## 4. Discussion
 
@@ -213,11 +229,12 @@ Plain `eig` passes $10^{-10}$ at $N = 65$ and reaches $0.04$ by $N = 160$. With 
 - **Measurement.** In topolectrical circuits or photonic lattices, is the GBZ itself accessible, e.g. from the measured spatial decay of driven modes, or only through the spectrum?
 - **Coupled cavities.** For a driven-dissipative chain of cavities with non-reciprocal coupling, the response is set by the Green's function, not the spectrum. Does the GBZ (or the unit circle) control the amplification of a long chain, and how do the two windings show up in it?
 
----
-
 ## Project layout
 
-```
+<details>
+<summary>Files and what they contain</summary>
+
+```text
 non-Bloch/
 ├── non_bloch/
 │   ├── model.py      Laurent polynomial E(beta), HN / range-2 / NH-SSH symbols, open Toeplitz matrix with gauge, circular criterion
@@ -231,18 +248,9 @@ non-Bloch/
 └── non-Bloch.pdf      the project report
 ```
 
-`non_bloch` imports `nh_ssh` (exact open spectrum, skin decay) from the previous project. The tests also import `ssh_model` (project-1 winding) for the Hermitian limit.
+</details>
 
-## Running
-
-```bash
-poetry install                                           # from the repository root
-poetry run pytest non-Bloch/tests                        # ~7 s
-poetry run python non-Bloch/scripts/make_figures.py      # ~65 s on 16 cores the first time, ~30 s with the mpmath cache
-poetry run python non-Bloch/scripts/make_figures.py --skip-mpmath
-```
-
-Runtimes measured on an AMD Ryzen 7 7840HS (Python 3.14.7, NumPy 2.4.6, SciPy 1.17.1, OpenBLAS 0.3.31). The 40-digit mpmath references take ~36 s and are cached in `figures/mpmath_ref.npz` (git-ignored). Two runs of the script give identical `results.txt` files.
+`non_bloch` imports `nh_ssh` (exact open spectrum, skin decay) from the [previous project](../nh-SSH/README.md). The tests also import `ssh_model` (the [SSH-model](../SSH-model/README.md) winding) for the Hermitian limit.
 
 ## References
 
